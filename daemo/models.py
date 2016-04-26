@@ -67,8 +67,9 @@ def to_dict(obj):
     for k in _dict:
         if isinstance(_dict[k], list):
             _dict[k] = [to_dict(x) for x in _dict[k]]
-        if inspect.isclass(_dict[k]):
-            _dict[k] = _dict[k].__dict__
+        elif isinstance(_dict[k], Template) or isinstance(_dict[k], AuxAttributes) or isinstance(_dict[k], Question) \
+                or isinstance(_dict[k], RemoteContent):
+            _dict[k] = to_dict(_dict[k])
     return _dict
 
 
@@ -77,10 +78,9 @@ def to_json(obj):
     for k in _dict:
         if isinstance(_dict[k], list):
             _dict[k] = [to_dict(x) for x in _dict[k]]
-        elif inspect.isclass(_dict[k]):
+        elif isinstance(_dict[k], Template) or isinstance(_dict[k], AuxAttributes) or \
+                isinstance(_dict[k], Question) or isinstance(_dict[k], RemoteContent):
             _dict[k] = to_dict(_dict[k])
-        elif isinstance(_dict[k], Question):
-            _dict[k] = _dict[k].__dict__
     return json.dumps(_dict)
 
 
