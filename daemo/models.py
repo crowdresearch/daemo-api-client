@@ -44,22 +44,24 @@ class Template(object):
 
         :type items: list
         """
-        self.items = items
+        self.template_items = items
 
 
 class Project(object):
-    def __init__(self, price, name='Untitled Project', repetition=1, templates=None):
+    def __init__(self, price, name='Untitled Project', repetition=1, templates=None, post_mturk=False):
         """
 
         :type templates: list
         :type price: float
         :type name: str
         :type repetition: int
+        :type post_mturk: bool
         """
         self.price = price
         self.repetition = repetition
         self.name = name
         self.templates = templates
+        self.post_mturk = post_mturk
 
 
 def to_dict(obj):
