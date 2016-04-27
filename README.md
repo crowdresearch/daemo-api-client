@@ -11,3 +11,17 @@ you will get a response like this:
 Use client_id and client_secret to get an access_token:
 
 `curl -X POST -d "username=yourUsername&password=yourPassword&grant_type=password&client_id=yourClientID&client_secret=yourClientSecret" https://HOSTNAME/api/oauth2-ng/token/`
+
+----------
+Example call for creating a project with one RemoteContent Item(iframe)
+```
+from daemo import models, client
+ti = models.RemoteContent('https://mywebsite.com/task/1', question_value='Iframe Title goes here', position=1)
+t = models.Template(items=[ti])
+p = models.Project(name='Project Name', price=0.1, repetition=1, templates=[t])
+data = models.to_json(p)
+d = client.DaemoClient(host='https://HOSTNAME/', access_token='yourAccessToken')
+
+response = d.create_project(data)
+
+```
