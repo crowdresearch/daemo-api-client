@@ -23,3 +23,6 @@ class DaemoClient:
     def get_projects(self):
         return self.get_request('api/project/requester_projects/')
 
+    def get_worker(self, daemo_id):
+        return self.get_request('api/worker/list-using-daemo-id/?daemo_id='+str(daemo_id))
+
