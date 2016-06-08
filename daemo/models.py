@@ -1,5 +1,4 @@
 import json
-import inspect
 
 
 class Question(object):
@@ -44,14 +43,14 @@ class Template(object):
 
         :type items: list
         """
-        self.template_items = items
+        self.items = items
 
 
 class Project(object):
-    def __init__(self, price, name='Untitled Project', repetition=1, templates=None, post_mturk=False):
+    def __init__(self, price, name='Untitled Project', repetition=1, template=None, post_mturk=False):
         """
 
-        :type templates: list
+        :type template: Template
         :type price: float
         :type name: str
         :type repetition: int
@@ -60,7 +59,7 @@ class Project(object):
         self.price = price
         self.repetition = repetition
         self.name = name
-        self.templates = templates
+        self.template = template
         self.post_mturk = post_mturk
 
 
