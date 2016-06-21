@@ -2,14 +2,18 @@ class Error:
     def __init__(self):
         pass
 
-    def func_def_undefined(self, error):
+    @staticmethod
+    def func_def_undefined(error):
         return "No definition for %s function found." % error
 
-    def unauthenticated(self):
+    @staticmethod
+    def unauthenticated():
         return "Permission denied. Please authenticate first!"
 
-    def missing_connection(self):
+    @staticmethod
+    def missing_connection():
         return "No connection exists. Please try again."
 
-    def required(self, param):
+    @staticmethod
+    def required(param):
         return 'Field %s is missing!' % param
