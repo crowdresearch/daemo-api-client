@@ -1,1 +1,3 @@
 requests
+wsaccel
+websocket-client
