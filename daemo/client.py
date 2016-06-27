@@ -2,269 +2,263 @@ import logging
 from inspect import isfunction
 
 import requests
-import sys
-import websocket
+from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
+from twisted.internet import reactor
 
 import daemo
 from daemo.errors import Error
 from daemo.exceptions import AuthException
+from daemo.protocol import ClientProtocol
+
+STREAM = 'stream'
+WRITE_ONLY = 'w'
+READ_ONLY = 'r'
+CALLBACK = "completed"
+APPROVE = "approve"
+CREDENTIALS = '.credentials'
+GRANT_TYPE = "grant_type"
+PROJECT_ID = "project_id"
+REFRESH_TOKEN = "refresh_token"
+ACCESS_TOKEN = "access_token"
+CLIENT_ID = "client_id"
+CREDENTIALS_NOT_PROVIDED = "Authentication credentials were not provided."
+CONTENT_JSON = "application/json"
+CONTENT_FORM_URLENCODED = "application/x-www-form-urlencoded"
+TOKEN = "Bearer %s"
+AUTHORIZATION = "Authorization"
+CONTENT_TYPE = "Content-Type"
+STATUS_ACCEPTED = 3
+STATUS_REJECTED = 4
 
 __version__ = daemo.__version__
 logger = logging.getLogger(__name__)
-logger.addHandler(logging.StreamHandler(sys.stdout))
-logger.setLevel(logging.DEBUG)
+fh = logging.FileHandler('.log')
+fh.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+logger.addHandler(ch)
+logger.addHandler(fh)
 
 
 class Client:
-    def __init__(self, client_id, access_token, refresh_token, project_id):
-        # assert username is not None and len(username) > 0, Error.required('username')
-        # assert password is not None and len(password) > 0, Error.required('password')
-        assert client_id is not None and len(client_id) > 0, Error.required('client_id')
-        assert access_token is not None and len(access_token) > 0, Error.required('access_token')
-        assert refresh_token is not None and len(refresh_token) > 0, Error.required('refresh_token')
-        assert project_id is not None and project_id > 0, Error.required('project_id')
+    def __init__(self, client_id, access_token, refresh_token):
+        assert client_id is not None and len(client_id) > 0, Error.required(CLIENT_ID)
+        assert access_token is not None and len(access_token) > 0, Error.required(ACCESS_TOKEN)
+        assert refresh_token is not None and len(refresh_token) > 0, Error.required(REFRESH_TOKEN)
 
         self.host = daemo.HOST
-
-        # self.username = username
-        # self.password = password
 
         self.client_id = client_id
         self.access_token = access_token
         self.refresh_token = refresh_token
-        self.project_id = project_id
+        self.project_id = None
+        self.stream = False
 
-        self.channel = None
-        self.stream = True
+        if self._credentials_exist():
+            self._load_tokens()
+        else:
+            self._persist_tokens()
 
         self.session = requests.session()
-
         self.authenticate()
 
     def authenticate(self):
+        self._refresh_token()
 
-        # self.session_login()
-        self.refresh_oauth_token()
-        self.channel = 'XXXXXXXXXX'
+    def publish(self, project_id, approve, completed, stream):
+        assert project_id is not None and project_id > 0, Error.required(PROJECT_ID)
+        assert isfunction(approve), Error.func_def_undefined(APPROVE)
+        assert isfunction(completed), Error.func_def_undefined(CALLBACK)
+        assert stream is not None, Error.required(STREAM)
 
-    # def session_login(self):
-    #     data = {
-    #         'username': self.username,
-    #         'password': self.password
-    #     }
-    #
-    #     response = self._post('/api/auth/login/', data=data)
-    #
-    #     if 'error' in response:
-    #         raise AuthException("Error refreshing access token. Please retry again.")
-    #     else:
-    #         print response
-    #         print response.json()
-    #         self.access_token = response.get('access_token')
-    #         self.refresh_token = response.get('refresh_token')
+        self.project_id = project_id
+        self.stream = stream
+        self._launch(project_id, approve, completed, stream)
 
-    def refresh_oauth_token(self):
-        print self.access_token
-        print self.refresh_token
+    def add_data(self, project_id, data):
+        response = self._post('/api/project/%d/add-data/' % project_id, data=data)
+        response.raise_for_status()
+        return response
 
+    def fetch_task(self, taskworker_id):
+        response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
+        response.raise_for_status()
+        return response
+
+    def update_status(self, task):
         data = {
-            'client_id': self.client_id,
-            'grant_type': 'refresh_token',
-            'refresh_token': self.refresh_token
+            'status': STATUS_ACCEPTED if task['accept'] else STATUS_REJECTED,
+            'workers': [task['id']]
         }
 
-        response = self._post('/api/oauth2-ng/token/', data=data)
+        response = self._post('/api/task-worker/%d/bulk-update-status', data)
+        response.raise_for_status()
 
-        if 'error' in response:
-            raise AuthException("Error refreshing access token. Please retry again.")
-        else:
-            self.access_token = response.get('access_token')
-            self.refresh_token = response.get('refresh_token')
+        return response
 
-            print self.access_token
-            print self.refresh_token
-
-    def publish(self, approve, completed, stream=True):
-        assert isfunction(approve), Error.func_def_undefined('approve')
-        assert isfunction(completed), Error.func_def_undefined('callback')
-        assert self.channel is not None, Error.unauthenticated()
-
-        self.stream = stream
-
-        if self.channel is not None:
-            self._launch(self.project_id, self.stream)
-
-    def status(self, project_id):
-        pass
+    def fetch_status(self, project_id):
+        # todo: get project status on pending and completed tasks
+        response = self._post()
+        response.raise_for_status()
+        return response
 
     def is_auth_error(self, response):
-        auth_error = "Authentication credentials were not provided."
-        return response.get('detail', '') == auth_error
-
-    def _get(self, relative_url, data, headers=None):
-        if headers is None:
-            headers = dict()
-        headers.update({
-            daemo.AUTHORIZATION: daemo.TOKEN % self.access_token,
-        })
-
-        response = self.session.get(self.host + relative_url, data=data, headers=headers)
-
         try:
             response = response.json()
-            print response
-        except Exception as e:
-            logging.error(e.message)
-            response = response.text
-
-        if self.is_auth_error(response):
-            self.refresh_oauth_token()
-
-            headers.update({
-                daemo.AUTHORIZATION: daemo.TOKEN % self.access_token
-            })
-
-            response = self.session.get(self.host + relative_url, data=data, headers=headers)
-
-            try:
-                response = response.json()
-                print response
-            except Exception as e:
-                logging.error(e.message)
-                response = response.text
-
-        return response
-
-    def _post(self, relative_url, data, headers=None, is_json=True):
-        if headers is None:
-            headers = dict()
-        headers.update({
-            daemo.AUTHORIZATION: daemo.TOKEN % self.access_token,
-        })
-
-        if is_json:
-            headers.update({
-                daemo.CONTENT_TYPE: daemo.CONTENT_JSON
-            })
-        else:
-            headers.update({
-                daemo.CONTENT_TYPE: daemo.CONTENT_FORM_URLENCODED
-            })
-
-        response = self.session.post(self.host + relative_url, data=data, headers=headers)
-
-        try:
-            print response
-            response = response.json()
-            print response
         except Exception as e:
             logger.error(e.message)
-            response = response.text
 
-        if self.is_auth_error(response):
-            self.refresh_oauth_token()
+        auth_error = CREDENTIALS_NOT_PROVIDED
+        return response is not None and response.get("detail", "") == auth_error
 
-            headers.update({
-                daemo.AUTHORIZATION: daemo.TOKEN % self.access_token
-            })
+    def _credentials_exist(self):
+        import os
+        return os.path.isfile(CREDENTIALS)
 
-            response = self.session.post(self.host + relative_url, data=data, headers=headers)
+    def _load_tokens(self):
+        import json
+        with open(CREDENTIALS, READ_ONLY) as infile:
+            data = json.load(infile)
 
-            try:
-                print response
-                response = response.json()
-                print response
-            except Exception as e:
-                logging.error(e.message)
-                response = response.text
+            self.client_id = data[CLIENT_ID]
+            self.access_token = data[ACCESS_TOKEN]
+            self.refresh_token = data[REFRESH_TOKEN]
+        infile.close()
 
-        return response
+    def _persist_tokens(self):
+        import json
+        with open(CREDENTIALS, WRITE_ONLY) as outfile:
+            data = {
+                CLIENT_ID: self.client_id,
+                ACCESS_TOKEN: self.access_token,
+                REFRESH_TOKEN: self.refresh_token
+            }
+            json.dump(data, outfile)
 
-    def _put(self, relative_url, data, headers=None):
-        if headers is None:
-            headers = dict()
-        headers.update({
-            daemo.AUTHORIZATION: daemo.TOKEN % self.access_token,
-            daemo.CONTENT_TYPE: daemo.CONTENT_JSON
-        })
+        outfile.close()
 
-        response = self.session.put(self.host + relative_url, data=data, headers=headers)
+    def _refresh_token(self):
+        data = {
+            CLIENT_ID: self.client_id,
+            GRANT_TYPE: REFRESH_TOKEN,
+            REFRESH_TOKEN: self.refresh_token
+        }
 
-        try:
+        response = self._post(daemo.OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
+
+        if "error" in response.json():
+            raise AuthException("Error refreshing access token. Please retry again.")
+        else:
             response = response.json()
-        except Exception as e:
-            logging.error(e.message)
-            response = response.text
+            self.access_token = response.get(ACCESS_TOKEN)
+            self.refresh_token = response.get(REFRESH_TOKEN)
 
-        if self.is_auth_error(response):
-            self.refresh_oauth_token()
+            self._persist_tokens()
 
-            headers.update({
-                daemo.AUTHORIZATION: daemo.TOKEN % self.access_token
-            })
+    def _launch(self, project_id, approve, completed, stream):
+        self._create_websocket(project_id, approve, completed, stream)
 
-            response = self.session.put(self.host + relative_url, data=data, headers=headers)
+    def _create_websocket(self, project_id, approve, completed, stream):
+        headers = {
+            AUTHORIZATION: TOKEN % self.access_token
+        }
 
-            try:
-                response = response.json()
-                print response
-            except Exception as e:
-                logging.error(e.message)
-                response = response.text
+        self.ws = WebSocketClientFactory(daemo.WEBSOCKET + self.host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
+        self.ws.protocol = ClientProtocol
 
-        return response
+        self.ws.project_id = project_id
+        self.ws.approve = approve
+        self.ws.completed = completed
+        self.ws.stream = stream
+        self.ws.client = self
 
-    def _launch(self, project_id, stream):
-        self._create_websocket(project_id)
-
-    def _create_websocket(self, project_id):
-        websocket.enableTrace(True)
-
-        self.ws = websocket.WebSocketApp(
-            self.host,
-            on_open=self.on_open,
-            on_message=self.on_message,
-            on_data=self.on_data,
-            on_error=self.on_error,
-            on_close=self.on_close
-        )
         self._wait_for_results()
 
     def _wait_for_results(self):
         assert self.ws is not None, Error.missing_connection()
-        self.ws.run_forever()
+        connectWS(self.ws)
+        reactor.run()
 
-    def on_open(self, ws):
-        print "### channel opened ###"
+    def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
+        if headers is None:
+            headers = dict()
 
-    def on_message(self, ws, message):
-        print message
+        if authorization:
+            headers.update({
+                AUTHORIZATION: TOKEN % self.access_token,
+            })
 
-    def on_data(self, ws, data):
-        print data
+        if is_json:
+            headers.update({
+                CONTENT_TYPE: CONTENT_JSON
+            })
 
-    def on_error(self, ws, error):
-        print error
+        response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
 
-    def launch_task(self, project_id, data, accept, completion, stream=False):
-        self.projects[project_id] = {'data': data, 'accept': accept, 'completion': completion, 'stream': stream}
-        if stream:
-            r = self.post_request(path='api/project/create-full/', data=data, stream=stream)
-            for result in r: #as they come -- spawn subprocess to monitor events
-                if result: #check to see if its actually something
-                    action = accept(result)
-                    if action:
-                        completion(result)
-                    #post action to take on the task
-        else:
-            while True:
-                results = self.post_request(path='api/project/create-full/', data=data, stream=stream)
-                #spawn and monitor as before except here we wait until server closes connection
-                for result in results:
-                    if result:
-                        action = accept(result)
-                        #post action to take on the task
-            map(results, completion) #something like this
+        if self.is_auth_error(response):
+            self._refresh_token()
 
-    def on_close(self, ws):
-        print "### channel closed ###"
+            if authorization:
+                headers.update({
+                    AUTHORIZATION: TOKEN % self.access_token
+                })
+
+            response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+
+        return response
+
+    def _post(self, relative_url, data, headers=None, is_json=True, authorization=True):
+        if headers is None:
+            headers = dict()
+
+        if authorization:
+            headers.update({
+                AUTHORIZATION: TOKEN % self.access_token,
+            })
+
+        if is_json:
+            headers.update({
+                CONTENT_TYPE: CONTENT_JSON
+            })
+
+        response = self.session.post(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+
+        if self.is_auth_error(response):
+            self._refresh_token()
+
+            if authorization:
+                headers.update({
+                    AUTHORIZATION: TOKEN % self.access_token
+                })
+
+            response = self.session.post(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+
+        return response
+
+    def _put(self, relative_url, data, headers=None, is_json=True, authorization=True):
+        if headers is None:
+            headers = dict()
+
+        if authorization:
+            headers.update({
+                AUTHORIZATION: TOKEN % self.access_token,
+            })
+
+        if is_json:
+            headers.update({
+                CONTENT_TYPE: CONTENT_JSON
+            })
+
+        response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+
+        if self.is_auth_error(response):
+            self._refresh_token()
+
+            if authorization:
+                headers.update({
+                    AUTHORIZATION: TOKEN % self.access_token
+                })
+
+            response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+
+        return response
