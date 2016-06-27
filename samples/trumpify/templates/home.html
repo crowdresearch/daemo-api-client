@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trumpify</title>
+    <link href="http://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.6/css/materialize.min.css">
+
+</head>
+<body>
+
+<div class="container">
+
+    <h3 class="center-align">trumpify</h3>
+    <p class="center-align">See Hillary's tweets getting Trump'd</p>
+    <div class="divider"></div>
+
+    {% for tweet in tweets %}
+    <div class="section" id="{{tweet.id}}">
+        <h5>{{tweet.text}}</h5>
+    </div>
+    <div class="divider"></div>
+    {% endfor %}
+
+</div>
+<script type="text/javascript" src="https://code.jquery.com/jquery-2.1.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/0.97.6/js/materialize.min.js"></script>
+<script>
+    var source = new EventSource("{{ url_for('sse.stream') }}");
+
+    source.addEventListener('tweet', function (event) {
+        var data = JSON.parse(event.data);
+
+        $('.container').append(
+                "<div class=\"section\" id=\"tweet"+data.id+"\">"
+                +"<h3>" + data.message + "</h3>"
+                +"</div>"
+        );
+    }, false);
+
+    source.addEventListener('tweet_result', function (event) {
+        var data = JSON.parse(event.data);
+
+        $('#tweet'+data.id).append(
+                "<div class=\"tweet-result"+data.id+"\">"
+                +"<h5>" + data.message + "</h5>"
+                +"</div>"
+        );
+    }, false);
+
+    source.addEventListener('error', function (event) {
+        console.log("Failed to connect.");
+    }, false);
+</script>
+</body>
+</html>

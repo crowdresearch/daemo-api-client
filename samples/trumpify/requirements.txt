@@ -1,0 +1,11 @@
+Flask==0.11.1
+Flask-SSE==0.2.1
+flask-sqlalchemy==2.1
+autobahn==0.14.1
+requests==2.10.0
+twitter==1.17.1
+gevent==1.1.1
+greenlet==0.4.10
+gunicorn==19.6.0
+redis==2.10.5
+
