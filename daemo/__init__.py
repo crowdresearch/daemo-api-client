@@ -1,13 +1,13 @@
 import logging
 
 __version__ = "0.0.1"
+
 # HOST = "https://daemo.stanford.edu"
-HOST = "http://127.0.0.1:8000"
-CONTENT_JSON = 'application/json'
-CONTENT_FORM_URLENCODED= 'application/x-www-form-urlencoded'
-TOKEN = "Bearer %s"
-AUTHORIZATION = "Authorization"
-CONTENT_TYPE = "Content-Type"
+HOST = "127.0.0.1:8000"
+HTTP = "http://"
+WEBSOCKET = "ws://"
+WS_BOT_SUBSCRIBE_URL = "/ws/bot?subscribe-user"
+OAUTH_TOKEN_URL = "/api/oauth2-ng/token/"
 
 
 try:
