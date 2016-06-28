@@ -1,27 +1,30 @@
-import threading
+import sys
 
 from flask import Flask, render_template
-from flask.ext.sqlalchemy import SQLAlchemy
+from flask_sqlalchemy import SQLAlchemy
 from flask_sse import sse
 from twitter import *
 
+sys.path.append('/Users/shirish.goyal/code/daemo-api-client/')
+
 from daemo.client import Client
 
-CLIENT_ID = ""
-ACCESS_TOKEN = ""
-REFRESH_TOKEN = ""
+CLIENT_ID = "7ntg6edsTmKtg29uxsDazjAQfQDmmGmOXpbwQZjR"
+ACCESS_TOKEN = "S9O8h8sQwCBE2bHzmmeNKDBwMZnEmH"
+REFRESH_TOKEN = "nmCTCAkmoiGgl9vbSGJWbBgMlNIGJ0"
 
-PROJECT_ID = 39
+PROJECT_ID = 47
 
-TW_CONSUMER_KEY = ''
-TW_CONSUMER_SECRET = ''
-TW_ACCESS_TOKEN = ''ß
-TW_ACCESS_TOKEN_SECRET = ''
-TWITTER_ID = '25073877'
-TWITTER_NAME = 'realDonaldTrump'
+TW_CONSUMER_KEY = 'DsrLkapnW62Jh9CrSGowhHrFz'
+TW_CONSUMER_SECRET = '2GqubzcNN11x3P3IZjDgL2wRW0tERzG1rG67ydmVR5Uh0Ctk4E'
+TW_ACCESS_TOKEN = '746086097109688320-F46uQCNnFiZOUki8EfbAZpzrIoUUbxS'
+TW_ACCESS_TOKEN_SECRET = 'aGUiYsBAYyS9J3uTU4sZl4dID9PcpnUUZOEX5YKDAEoJL'
+TWITTER_ID = '1339835893'
+TWITTER_NAME = 'HillaryClinton'
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/test.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 app.config["REDIS_URL"] = "redis://localhost:6379/1"
 app.register_blueprint(sse, url_prefix='/stream')
@@ -33,9 +36,19 @@ def approve(result):
 
 
 def completed(result):
-    print result
+    assert result is not None and result.get('results', None) is not None
 
-    # todo: push to db and frontend
+    text = result.get('results')[0].get('result')
+
+    if len(text) > 10:
+        auth = OAuth(
+            consumer_key=TW_CONSUMER_KEY,
+            consumer_secret=TW_CONSUMER_SECRET,
+            token=TW_ACCESS_TOKEN,
+            token_secret=TW_ACCESS_TOKEN_SECRET
+        )
+        twitter = Twitter(auth=auth)
+        twitter.statuses.update(status=text)
 
 
 class Tweet(db.Model):
@@ -51,7 +64,7 @@ class TweetResult(db.Model):
     tweet_id = db.Column(db.Integer, db.ForeignKey('tweet.id'))
 
 
-class Twitter(object):
+class TwitterClient(object):
     def __init__(self):
         self.auth = OAuth(
             consumer_key=TW_CONSUMER_KEY,
@@ -59,44 +72,45 @@ class Twitter(object):
             token=TW_ACCESS_TOKEN,
             token_secret=TW_ACCESS_TOKEN_SECRET
         )
+        #
+        # self.stream = TwitterStream(auth=self.auth)
+        # self.iterator = self.stream.statuses.filter(follow=TWITTER_ID)
+        self.client = Client(client_id=CLIENT_ID, access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN)
+        # self.client2 = Client(client_id=CLIENT_ID, access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN)
 
-        self.stream = TwitterStream(auth=self.auth)
-        self.iterator = self.stream.statuses.filter(follow=TWITTER_ID)
+        # thread = threading.Thread(target=self.run, args=())
+        # thread.daemon = True
+        # thread.start()
 
-        thread = threading.Thread(target=self.run, args=())
-        thread.daemon = True
-        thread.start()
+        self.client.publish(project_id=PROJECT_ID, approve=approve, completed=completed, stream=True)
 
     def run(self):
-        client = Client(
-            client_id=CLIENT_ID, access_token=ACCESS_TOKEN, refresh_token=REFRESH_TOKEN
-        )
-        client.publish(project_id=PROJECT_ID, approve=approve, completed=completed, stream=True)
-
         for message in self.iterator:
             if message.get('text', None) is not None \
-                    and 'RT' not in message.get('text') \
-                    and message.get('user') is not None \
-                    and message.get('user').get('id', 0) == int(TWITTER_ID):
+                    and 'RT' not in message.get('text'):  # \
+                # and message.get('user') is not None \
+                # and message.get('user').get('id', 0) == int(TWITTER_ID):
                 text = message.get('text')
-                with app.app_context():
-                    prefix = '@%s ' % TWITTER_NAME
-                    if text.lower().startswith(prefix.lower()):
-                        text = text[len(prefix):]
-
-                    # check if tweet already in db
-                    tweet = Tweet.query.filter_by(text=text).first()
-                    if tweet is None:
-                        # tweet not in db
-                        tweet = Tweet(text=text)
-                        db.session.add(tweet)
-                        db.session.commit()
-
-                        sse.publish({"message": text, "id": tweet.id}, type='tweet')
-
-                        client.add_data(project_id=PROJECT_ID, data={
-                            "message": text, "id": tweet.id
-                        })
+                # with app.app_context():
+                #     print "got new tweet: %s" % text
+                #
+                #     prefix = '@%s ' % TWITTER_NAME
+                #     if text.lower().startswith(prefix.lower()) and len(text) > 40:
+                #         text = text[len(prefix):]
+                #
+                #     # check if tweet already in db
+                #     tweet = Tweet.query.filter_by(text=text).first()
+                #     if tweet is None:
+                #         # tweet not in db
+                #         tweet = Tweet(text=text)
+                #         db.session.add(tweet)
+                #         db.session.commit()
+                #
+                #         sse.publish({"message": text, "id": tweet.id}, type='tweet')
+                #
+                #         self.client2.add_data(project_id=PROJECT_ID, data={"tasks": [{
+                #             "tweet": text, "id": tweet.id
+                #         }]})
 
 
 @app.route('/')
@@ -105,7 +119,7 @@ def home():
     return render_template('home.html', tweets=tweets)
 
 
-twitter = Twitter()
+twitter_client = TwitterClient()
 
 '''
 {

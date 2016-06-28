@@ -34,8 +34,9 @@
 
         $('.container').append(
                 "<div class=\"section\" id=\"tweet"+data.id+"\">"
-                +"<h3>" + data.message + "</h3>"
+                +"<h5>" + data.message + "</h5>"
                 +"</div>"
+                +"<div class=\"divider\"></div>"
         );
     }, false);
 
@@ -44,7 +45,7 @@
 
         $('#tweet'+data.id).append(
                 "<div class=\"tweet-result"+data.id+"\">"
-                +"<h5>" + data.message + "</h5>"
+                +"<h6>" + data.message + "</h6>"
                 +"</div>"
         );
     }, false);

@@ -1,3 +1,4 @@
+import json
 import logging
 from inspect import isfunction
 
@@ -41,16 +42,16 @@ logger.addHandler(fh)
 
 
 class Client:
-    def __init__(self, client_id, access_token, refresh_token):
-        assert client_id is not None and len(client_id) > 0, Error.required(CLIENT_ID)
-        assert access_token is not None and len(access_token) > 0, Error.required(ACCESS_TOKEN)
-        assert refresh_token is not None and len(refresh_token) > 0, Error.required(REFRESH_TOKEN)
+    client_id = None
+    access_token = None
+    refresh_token = None
+
+    def __init__(self, credentials_path):
+        assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials path")
+        self.credentials_path = credentials_path
 
         self.host = daemo.HOST
 
-        self.client_id = client_id
-        self.access_token = access_token
-        self.refresh_token = refresh_token
         self.project_id = None
         self.stream = False
 
@@ -73,15 +74,16 @@ class Client:
 
         self.project_id = project_id
         self.stream = stream
+
         self._launch(project_id, approve, completed, stream)
 
     def add_data(self, project_id, data):
-        response = self._post('/api/project/%d/add-data/' % project_id, data=data)
+        response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps(data))
         response.raise_for_status()
         return response
 
     def fetch_task(self, taskworker_id):
-        response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
+        response = self._get('/api/task-worker/%d/' % taskworker_id, data=json.dumps({}))
         response.raise_for_status()
         return response
 
@@ -91,7 +93,7 @@ class Client:
             'workers': [task['id']]
         }
 
-        response = self._post('/api/task-worker/%d/bulk-update-status', data)
+        response = self._post('/api/task-worker/bulk-update-status/', data=json.dumps(data))
         response.raise_for_status()
 
         return response
@@ -106,10 +108,11 @@ class Client:
         try:
             response = response.json()
         except Exception as e:
-            logger.error(e.message)
+            pass
 
         auth_error = CREDENTIALS_NOT_PROVIDED
-        return response is not None and response.get("detail", "") == auth_error
+
+        return response is not None and isinstance(response, dict) and response.get("detail", "") == auth_error
 
     def _credentials_exist(self):
         import os
@@ -117,8 +120,12 @@ class Client:
 
     def _load_tokens(self):
         import json
-        with open(CREDENTIALS, READ_ONLY) as infile:
+        with open(self.credentials_path, READ_ONLY) as infile:
             data = json.load(infile)
+
+            assert data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID)
+            assert data[ACCESS_TOKEN] is not None and len(data[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN)
+            assert data[REFRESH_TOKEN] is not None and len(data[REFRESH_TOKEN]) > 0, Error.required(REFRESH_TOKEN)
 
             self.client_id = data[CLIENT_ID]
             self.access_token = data[ACCESS_TOKEN]
@@ -127,7 +134,7 @@ class Client:
 
     def _persist_tokens(self):
         import json
-        with open(CREDENTIALS, WRITE_ONLY) as outfile:
+        with open(self.credentials_path, WRITE_ONLY) as outfile:
             data = {
                 CLIENT_ID: self.client_id,
                 ACCESS_TOKEN: self.access_token,
@@ -157,6 +164,7 @@ class Client:
 
     def _launch(self, project_id, approve, completed, stream):
         self._create_websocket(project_id, approve, completed, stream)
+        self._wait_for_results()
 
     def _create_websocket(self, project_id, approve, completed, stream):
         headers = {
@@ -171,8 +179,6 @@ class Client:
         self.ws.completed = completed
         self.ws.stream = stream
         self.ws.client = self
-
-        self._wait_for_results()
 
     def _wait_for_results(self):
         assert self.ws is not None, Error.missing_connection()
