@@ -1,6 +1,5 @@
-import sys
 import os
-import threading
+import sys
 
 from twitter import *
 
@@ -8,12 +7,18 @@ sys.path.append(os.path.abspath('../../'))
 
 CREDENTIALS_FILE = '.credentials'
 
-PROJECT_ID = 53
+PROJECT_ID = os.getenv('PROJECT_ID', False)
+assert PROJECT_ID, "Missing environ variable PROJECT_ID"
 
-TW_CONSUMER_KEY = 'DsrLkapnW62Jh9CrSGowhHrFz'
-TW_CONSUMER_SECRET = '2GqubzcNN11x3P3IZjDgL2wRW0tERzG1rG67ydmVR5Uh0Ctk4E'
-TW_ACCESS_TOKEN = '746086097109688320-F46uQCNnFiZOUki8EfbAZpzrIoUUbxS'
-TW_ACCESS_TOKEN_SECRET = 'aGUiYsBAYyS9J3uTU4sZl4dID9PcpnUUZOEX5YKDAEoJL'
+TW_CONSUMER_KEY = os.getenv('TW_CONSUMER_KEY', False)
+TW_CONSUMER_SECRET = os.getenv('TW_CONSUMER_SECRET', False)
+TW_ACCESS_TOKEN = os.getenv('TW_ACCESS_TOKEN', False)
+TW_ACCESS_TOKEN_SECRET = os.getenv('TW_ACCESS_TOKEN_SECRET', False)
+
+assert TW_CONSUMER_KEY, "Missing environ variable TW_CONSUMER_KEY"
+assert TW_CONSUMER_SECRET, "Missing environ variable TW_CONSUMER_SECRET"
+assert TW_ACCESS_TOKEN, "Missing environ variable TW_ACCESS_TOKEN"
+assert TW_ACCESS_TOKEN_SECRET, "Missing environ variable TW_ACCESS_TOKEN_SECRET"
 
 TWITTER_ID = '1339835893'
 TWITTER_NAME = 'HillaryClinton'
@@ -51,5 +56,6 @@ class DaemoClient:
 
         self.client = Client(CREDENTIALS_FILE)
         self.client.publish(project_id=PROJECT_ID, approve=approve, completed=completed, stream=True)
+
 
 daemo_client = DaemoClient()

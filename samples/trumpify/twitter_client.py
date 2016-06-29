@@ -10,16 +10,21 @@ sys.path.append(os.path.abspath('../../'))
 CREDENTIALS_FILE = '.credentials'
 LAST_ID_FILE = '.lastid'
 
-TW_CONSUMER_KEY = 'DsrLkapnW62Jh9CrSGowhHrFz'
-TW_CONSUMER_SECRET = '2GqubzcNN11x3P3IZjDgL2wRW0tERzG1rG67ydmVR5Uh0Ctk4E'
-TW_ACCESS_TOKEN = '746086097109688320-F46uQCNnFiZOUki8EfbAZpzrIoUUbxS'
-TW_ACCESS_TOKEN_SECRET = 'aGUiYsBAYyS9J3uTU4sZl4dID9PcpnUUZOEX5YKDAEoJL'
+PROJECT_ID = os.getenv('PROJECT_ID', False)
+assert PROJECT_ID, "Missing environ variable PROJECT_ID"
 
-TWITTER_ID = '1339835893'
+TW_CONSUMER_KEY = os.getenv('TW_CONSUMER_KEY', False)
+TW_CONSUMER_SECRET = os.getenv('TW_CONSUMER_SECRET', False)
+TW_ACCESS_TOKEN = os.getenv('TW_ACCESS_TOKEN', False)
+TW_ACCESS_TOKEN_SECRET = os.getenv('TW_ACCESS_TOKEN_SECRET', False)
+
+assert TW_CONSUMER_KEY, "Missing environ variable TW_CONSUMER_KEY"
+assert TW_CONSUMER_SECRET, "Missing environ variable TW_CONSUMER_SECRET"
+assert TW_ACCESS_TOKEN, "Missing environ variable TW_ACCESS_TOKEN"
+assert TW_ACCESS_TOKEN_SECRET, "Missing environ variable TW_ACCESS_TOKEN_SECRET"
+
 TWITTER_NAME = 'HillaryClinton'
 TWITTER_START_ID = '747865622030200832'
-
-PROJECT_ID = 53
 
 
 class TwitterClient:
@@ -58,22 +63,27 @@ class TwitterClient:
             self.process_message(message)
 
     def process_message(self, message):
+        response = "FAIL"
+
         if message.get('text', False):
             text = message.get('text')
             id = message.get('id')
 
             if len(text) > 10:
-                response = None
                 try:
                     response = self.client.add_data(project_id=PROJECT_ID, data={"tasks": [{
                         "tweet": text, "id": id
                     }]})
 
+                    assert response is not None, "Failed to add data to project"
+
                     last_id = id
                     self.update_last_id(last_id)
+
+                    return "SUCCESS"
                 except Exception as e:
                     print e.message
-                    print response.text
+        return response
 
     def update_last_id(self, last_id):
         with open(LAST_ID_FILE, 'w') as outfile:
