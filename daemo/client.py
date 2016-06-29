@@ -79,12 +79,10 @@ class Client:
 
     def add_data(self, project_id, data):
         response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps(data))
-        response.raise_for_status()
         return response
 
     def fetch_task(self, taskworker_id):
-        response = self._get('/api/task-worker/%d/' % taskworker_id, data=json.dumps({}))
-        response.raise_for_status()
+        response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
         return response
 
     def update_status(self, task):
@@ -94,14 +92,10 @@ class Client:
         }
 
         response = self._post('/api/task-worker/bulk-update-status/', data=json.dumps(data))
-        response.raise_for_status()
-
         return response
 
     def fetch_status(self, project_id):
-        # todo: get project status on pending and completed tasks
-        response = self._post()
-        response.raise_for_status()
+        response = self._post('/api/project/%d/is-done/' % project_id)
         return response
 
     def is_auth_error(self, response):
