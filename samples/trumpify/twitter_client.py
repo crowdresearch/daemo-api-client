@@ -7,11 +7,13 @@ from twitter import *
 
 sys.path.append(os.path.abspath('../../'))
 
-CREDENTIALS_FILE = '.credentials'
+CREDENTIALS_FILE = 'credentials.json'
 LAST_ID_FILE = '.lastid'
 
 PROJECT_ID = os.getenv('PROJECT_ID', False)
 assert PROJECT_ID, "Missing environ variable PROJECT_ID"
+
+PROJECT_ID = int(PROJECT_ID)
 
 TW_CONSUMER_KEY = os.getenv('TW_CONSUMER_KEY', False)
 TW_CONSUMER_SECRET = os.getenv('TW_CONSUMER_SECRET', False)

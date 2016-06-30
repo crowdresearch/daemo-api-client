@@ -5,10 +5,12 @@ from twitter import *
 
 sys.path.append(os.path.abspath('../../'))
 
-CREDENTIALS_FILE = '.credentials'
+CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = os.getenv('PROJECT_ID', False)
 assert PROJECT_ID, "Missing environ variable PROJECT_ID"
+
+PROJECT_ID = int(PROJECT_ID)
 
 TW_CONSUMER_KEY = os.getenv('TW_CONSUMER_KEY', False)
 TW_CONSUMER_SECRET = os.getenv('TW_CONSUMER_SECRET', False)
@@ -20,7 +22,6 @@ assert TW_CONSUMER_SECRET, "Missing environ variable TW_CONSUMER_SECRET"
 assert TW_ACCESS_TOKEN, "Missing environ variable TW_ACCESS_TOKEN"
 assert TW_ACCESS_TOKEN_SECRET, "Missing environ variable TW_ACCESS_TOKEN_SECRET"
 
-TWITTER_ID = '1339835893'
 TWITTER_NAME = 'HillaryClinton'
 
 auth = OAuth(
