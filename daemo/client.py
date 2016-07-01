@@ -2,6 +2,7 @@ import json
 import logging
 from inspect import isfunction
 
+import fcntl
 import requests
 from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
 from twisted.internet import reactor
@@ -83,6 +84,7 @@ class Client:
 
     def fetch_task(self, taskworker_id):
         response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
+        response.raise_for_status()
         return response
 
     def update_status(self, task):
@@ -95,7 +97,7 @@ class Client:
         return response
 
     def fetch_status(self, project_id):
-        response = self._post('/api/project/%d/is-done/' % project_id)
+        response = self._get('/api/project/%d/is-done/' % project_id, data={})
         return response
 
     def is_auth_error(self, response):
@@ -113,8 +115,9 @@ class Client:
         return os.path.isfile(CREDENTIALS)
 
     def _load_tokens(self):
-        import json
         with open(self.credentials_path, READ_ONLY) as infile:
+            fcntl.flock(infile.fileno(), fcntl.LOCK_EX)
+
             data = json.load(infile)
 
             assert data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID)
@@ -124,11 +127,11 @@ class Client:
             self.client_id = data[CLIENT_ID]
             self.access_token = data[ACCESS_TOKEN]
             self.refresh_token = data[REFRESH_TOKEN]
-        infile.close()
 
     def _persist_tokens(self):
-        import json
         with open(self.credentials_path, WRITE_ONLY) as outfile:
+            fcntl.flock(outfile.fileno(), fcntl.LOCK_EX)
+
             data = {
                 CLIENT_ID: self.client_id,
                 ACCESS_TOKEN: self.access_token,
@@ -136,9 +139,9 @@ class Client:
             }
             json.dump(data, outfile)
 
-        outfile.close()
-
     def _refresh_token(self):
+        self._load_tokens()
+
         data = {
             CLIENT_ID: self.client_id,
             GRANT_TYPE: REFRESH_TOKEN,
@@ -178,6 +181,9 @@ class Client:
         assert self.ws is not None, Error.missing_connection()
         connectWS(self.ws)
         reactor.run()
+
+    def mark_completed(self):
+        reactor.stop()
 
     def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
         if headers is None:

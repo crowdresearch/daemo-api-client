@@ -3,6 +3,7 @@ import os
 import sys
 import time
 
+import fcntl
 from twitter import *
 
 sys.path.append(os.path.abspath('../../'))
@@ -78,6 +79,7 @@ class TwitterClient:
                     }]})
 
                     assert response is not None, "Failed to add data to project"
+                    response.raise_for_status()
 
                     last_id = id
                     self.update_last_id(last_id)
@@ -89,17 +91,19 @@ class TwitterClient:
 
     def update_last_id(self, last_id):
         with open(LAST_ID_FILE, 'w') as outfile:
+            fcntl.flock(outfile.fileno(), fcntl.LOCK_EX)
+
             data = {
                 'last_id': last_id
             }
             json.dump(data, outfile)
 
-        outfile.close()
-
     def get_last_id(self):
         last_id = TWITTER_START_ID
         try:
             with open(LAST_ID_FILE, 'r') as infile:
+                fcntl.flock(infile.fileno(), fcntl.LOCK_EX)
+
                 data = json.load(infile)
                 last_id = data['last_id']
         except:

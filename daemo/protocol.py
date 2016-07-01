@@ -37,6 +37,8 @@ class ClientProtocol(WebSocketClientProtocol):
 
             if project_id == self.factory.client.project_id:
                 task = self.factory.client.fetch_task(taskworker_id)
+                task.raise_for_status()
+
                 task_data = task.json()
 
                 if task is not None:
@@ -44,9 +46,21 @@ class ClientProtocol(WebSocketClientProtocol):
 
                     if self.factory.approve(task_data):
                         task_data['accept'] = True
+
+                    task_status = self.factory.client.update_status(task_data)
+                    task_status.raise_for_status()
+
+                    if task_data['accept']:
                         self.factory.completed(task_data)
 
-                    self.factory.client.update_status(task_data)
+                    project_status = self.factory.client.fetch_status(project_id)
+                    project_status.raise_for_status()
+
+                    project_data = project_status.json()
+                    is_done = project_data.get('is_done')
+
+                    if is_done:
+                        self.factory.client.mark_completed()
 
     def onSend(self, data):
         self.sendMessage(data.encode("utf8"))

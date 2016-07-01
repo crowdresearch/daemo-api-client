@@ -34,7 +34,7 @@ twitter_client = Twitter(auth=auth)
 
 
 def approve(result):
-    assert result is not None and result.get('results', None) is not None
+    assert result is not None and result.get('results', None) is not None and len(result.get('results')) > 0
     text = result.get('results')[0].get('result')
     return len(text) > 10
 
