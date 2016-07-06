@@ -5,6 +5,8 @@ from twitter import *
 
 sys.path.append(os.path.abspath('../../'))
 
+from daemo.client import Client
+
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = os.getenv('PROJECT_ID', False)
@@ -22,8 +24,6 @@ assert TW_CONSUMER_SECRET, "Missing environ variable TW_CONSUMER_SECRET"
 assert TW_ACCESS_TOKEN, "Missing environ variable TW_ACCESS_TOKEN"
 assert TW_ACCESS_TOKEN_SECRET, "Missing environ variable TW_ACCESS_TOKEN_SECRET"
 
-TWITTER_NAME = 'HillaryClinton'
-
 auth = OAuth(
     consumer_key=TW_CONSUMER_KEY,
     consumer_secret=TW_CONSUMER_SECRET,
@@ -34,29 +34,31 @@ twitter_client = Twitter(auth=auth)
 
 
 def approve(result):
+    # this function gets called when there is a new worker response available
+    # it should return a boolean value indicating if the worker response should be approved or not
+
     assert result is not None and result.get('results', None) is not None and len(result.get('results')) > 0
+
     text = result.get('results')[0].get('result')
     return len(text) > 10
 
 
-def completed(result):
+def post_to_twitter(result):
+    # this function gets called when there is an approved worker response available
+    # it doesn't expect any response in return and can be used to pass worker response to rest of the workflow
+
     assert result is not None and result.get('results', None) is not None
+
     text = result.get('results')[0].get('result')
 
+    # push the worker response back to twitter
     try:
         twitter_client.statuses.update(status=text)
     except Exception as e:
         pass
 
 
-class DaemoClient:
-    def __init__(self):
-        from daemo.client import Client
+print "Initializing Daemo Client..."
 
-        print "Initializing Daemo Client..."
-
-        self.client = Client(CREDENTIALS_FILE)
-        self.client.publish(project_id=PROJECT_ID, approve=approve, completed=completed, stream=True)
-
-
-daemo_client = DaemoClient()
+client = Client(CREDENTIALS_FILE)
+client.publish(project_id=PROJECT_ID, approve=approve, completed=post_to_twitter, stream=True)

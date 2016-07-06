@@ -1,9 +1,9 @@
+import fcntl
 import json
 import os
 import sys
 import time
 
-import fcntl
 from twitter import *
 
 sys.path.append(os.path.abspath('../../'))
@@ -26,8 +26,8 @@ assert TW_CONSUMER_SECRET, "Missing environ variable TW_CONSUMER_SECRET"
 assert TW_ACCESS_TOKEN, "Missing environ variable TW_ACCESS_TOKEN"
 assert TW_ACCESS_TOKEN_SECRET, "Missing environ variable TW_ACCESS_TOKEN_SECRET"
 
-TWITTER_NAME = 'HillaryClinton'
-TWITTER_START_ID = '747865622030200832'
+INPUT_TWITTER_NAME = 'HillaryClinton'
+INPUT_TWITTER_START_ID = '747865622030200832'
 
 
 class TwitterClient:
@@ -56,7 +56,7 @@ class TwitterClient:
         last_id = self.get_last_id()
 
         self.messages = self.twitter.statuses.user_timeline(
-            screen_name=TWITTER_NAME,
+            screen_name=INPUT_TWITTER_NAME,
             exclude_replies=True,
             include_rts=False,
             since_id=last_id
@@ -72,8 +72,9 @@ class TwitterClient:
             text = message.get('text')
             id = message.get('id')
 
-            if len(text) > 10:
+            if len(text) > 10:  # ignore very small tweets
                 try:
+                    # push the tweet to Daemo to seek worker responses
                     response = self.client.add_data(project_id=PROJECT_ID, data={"tasks": [{
                         "tweet": text, "id": id
                     }]})
@@ -89,6 +90,7 @@ class TwitterClient:
                     print e.message
         return response
 
+    # keep a track of last tweet to avoid duplication
     def update_last_id(self, last_id):
         with open(LAST_ID_FILE, 'w') as outfile:
             fcntl.flock(outfile.fileno(), fcntl.LOCK_EX)
@@ -98,8 +100,9 @@ class TwitterClient:
             }
             json.dump(data, outfile)
 
+    # check last id from cache or use the one defined initially
     def get_last_id(self):
-        last_id = TWITTER_START_ID
+        last_id = INPUT_TWITTER_START_ID
         try:
             with open(LAST_ID_FILE, 'r') as infile:
                 fcntl.flock(infile.fileno(), fcntl.LOCK_EX)

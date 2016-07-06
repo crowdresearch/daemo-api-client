@@ -96,3 +96,4 @@ ENV/
 out
 gen
 # Created by .ignore support plugin (hsz.mobi)
+credentials.json
