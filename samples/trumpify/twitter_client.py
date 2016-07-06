@@ -80,7 +80,7 @@ class TwitterClient:
                     }]})
 
                     assert response is not None, "Failed to add data to project"
-                    response.raise_for_status()
+                    assert response.status_code < 400, "Error %s" % response.reason
 
                     last_id = id
                     self.update_last_id(last_id)
