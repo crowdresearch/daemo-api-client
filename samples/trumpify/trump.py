@@ -19,6 +19,7 @@ TW_ACCESS_TOKEN = ''
 TW_ACCESS_TOKEN_SECRET = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
+TIMESPAN_MIN = 5
 
 auth = OAuth(
     consumer_key=TW_CONSUMER_KEY,
@@ -49,6 +50,8 @@ def fetch_new_tweets(count, interval):
         if last_id is None or last_id != new_id:
             push_to_daemo(message)
             last_id = new_id
+        else:
+            print "%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, TIMESPAN_MIN)
 
         time.sleep(interval)
 
@@ -64,7 +67,7 @@ def push_to_daemo(message):
 
 def approve(result):
     text = result.get('results')[0].get('result')
-    return len(text) > 10
+    return len(text) > 0
 
 
 def post_to_twitter(result):
@@ -73,10 +76,10 @@ def post_to_twitter(result):
     try:
         twitter.statuses.update(status=text)
     except Exception as e:
-        pass
+        print e.message
 
 
-thread = Thread(target=fetch_new_tweets, args=(1, 30))
+thread = Thread(target=fetch_new_tweets, args=(1, TIMESPAN_MIN * 60))
 thread.daemon = True
 thread.start()
 
