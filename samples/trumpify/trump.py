@@ -1,7 +1,9 @@
 import os
 import sys
+import threading
 import time
-from threading import Thread
+from datetime import datetime
+from email._parseaddr import mktime_tz, parsedate_tz
 
 from twitter import *
 
@@ -12,6 +14,7 @@ from daemo.client import Client
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = -1
+REVIEW_PROJECT_ID = -1
 
 TW_CONSUMER_KEY = ''
 TW_CONSUMER_SECRET = ''
@@ -20,6 +23,8 @@ TW_ACCESS_TOKEN_SECRET = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
 TIMESPAN_MIN = 5
+TWEET_COUNT = 10
+MAX_TWEETS = 5
 
 auth = OAuth(
     consumer_key=TW_CONSUMER_KEY,
@@ -29,14 +34,29 @@ auth = OAuth(
 )
 
 print "Initializing..."
+count = 0
 twitter = Twitter(auth=auth)
 client = Client(CREDENTIALS_FILE)
 
 
-def fetch_new_tweets(count, interval):
-    last_id = None
+def to_local_time(tweet_timestamp):
+    """Convert rfc 5322 -like time string into a local time
+       string in rfc 3339 -like format.
+    """
+    timestamp = mktime_tz(parsedate_tz(tweet_timestamp))
+    return datetime.fromtimestamp(timestamp)
 
-    while True:
+
+def is_from_last_interval(message, interval):
+    current_time = datetime.now()
+    created_at = to_local_time(message.get('created_at'))
+    delta = current_time - created_at
+    return 0 < delta.total_seconds() < (interval * 60)
+
+
+def fetch_new_tweets(count, interval):
+    print "Fetching new tweets..."
+    while count < MAX_TWEETS:
         messages = twitter.statuses.user_timeline(
             screen_name=INPUT_TWITTER_NAME,
             exclude_replies=True,
@@ -44,43 +64,79 @@ def fetch_new_tweets(count, interval):
             count=count
         )
 
-        message = messages[0]
-        new_id = message.get('id')
+        # get messages within last interval
+        messages_last_interval = [message for message in messages if is_from_last_interval(message, interval)]
 
-        if last_id is None or last_id != new_id:
-            push_to_daemo(message)
-            last_id = new_id
+        if len(messages_last_interval) > 0:
+            for message in messages_last_interval:
+                post_to_daemo(message)
         else:
-            print "%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, TIMESPAN_MIN)
+            print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
 
-        time.sleep(interval)
+        time.sleep(interval * 60)
 
 
-def push_to_daemo(message):
+def post_to_daemo(message):
     text = message.get('text')
     id = message.get('id')
 
-    client.add_data(project_id=PROJECT_ID, data={"tasks": [{
-        "tweet": text, "id": id
-    }]})
+    client.publish(project_id=PROJECT_ID, tasks=[{
+        "id": id,
+        "tweet": text
+    }], approve=approve_tweet, completed=create_review_task, stream=True)
 
 
-def approve(result):
-    text = result.get('results')[0].get('result')
-    return len(text) > 0
+def approve_tweet(results):
+    approvals = []
+    for result in results:
+        text = result.get('results')[0].get('result')
+        is_approved = len(text) > 0
+        approvals.append(is_approved)
+    return approvals
 
 
-def post_to_twitter(result):
-    text = result.get('results')[0].get('result')
+def create_review_task(results):
+    for result in results:
+        text = result.get('results')[0].get('result')
 
-    try:
-        twitter.statuses.update(status=text)
-    except Exception as e:
-        print e.message
+        client.publish(
+            project_id=REVIEW_PROJECT_ID,
+            tasks=[{
+                "id": id,
+                "tweet_result": text
+            }],
+            approve=approve_review,
+            completed=post_to_twitter,
+            stream=True
+        )
 
 
-thread = Thread(target=fetch_new_tweets, args=(1, TIMESPAN_MIN * 60))
-thread.daemon = True
+def approve_review(results):
+    approvals = []
+    for result in results:
+        text = result.get('results')[0].get('result')
+        is_approved = len(text) > 0
+        approvals.append(is_approved)
+    return approvals
+
+
+def post_to_twitter(results):
+    for result in results:
+        text = result.get('results')[0].get('result')
+
+        try:
+            twitter.statuses.update(status=text)
+        except Exception as e:
+            print e.message
+
+
+thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, TIMESPAN_MIN))
 thread.start()
 
-client.publish(project_id=PROJECT_ID, approve=approve, completed=post_to_twitter, stream=True)
+client.publish(
+    project_id=PROJECT_ID,
+    tasks=[],
+    approve=approve_tweet,
+    completed=create_review_task,
+    stream=True
+)

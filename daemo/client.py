@@ -142,7 +142,7 @@ class Client:
 
         return response
 
-    def aggregate(self, project_id,task_id, task_data):
+    def aggregate(self, project_id, task_id, task_data):
         self.aggregated_data.append({
             'project_id': project_id,
             'task_id': task_id,
