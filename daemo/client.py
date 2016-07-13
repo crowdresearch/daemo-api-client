@@ -1,8 +1,14 @@
+import fcntl
 import json
 import logging
+import multiprocessing
+import os
+import signal
+import sys
+import threading
+import time
 from inspect import isfunction
 
-import fcntl
 import requests
 from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
 from twisted.internet import reactor
@@ -17,7 +23,6 @@ WRITE_ONLY = 'w'
 READ_ONLY = 'r'
 CALLBACK = "completed"
 APPROVE = "approve"
-CREDENTIALS = '.credentials'
 GRANT_TYPE = "grant_type"
 PROJECT_ID = "project_id"
 REFRESH_TOKEN = "refresh_token"
@@ -46,6 +51,9 @@ class Client:
     client_id = None
     access_token = None
     refresh_token = None
+    projects = []
+    cache = []
+    aggregated_data = []
 
     def __init__(self, credentials_path):
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials path")
@@ -53,6 +61,7 @@ class Client:
 
         self.host = daemo.HOST
 
+        self.ws_process = None
         self.project_id = None
         self.stream = False
 
@@ -62,25 +71,93 @@ class Client:
             self._persist_tokens()
 
         self.session = requests.session()
-        self.authenticate()
-
-    def authenticate(self):
         self._refresh_token()
 
-    def publish(self, project_id, approve, completed, stream):
+        self.register_signals()
+
+        self.connect()
+
+    def register_signals(self):
+        thread = threading.Thread(target=signal.pause)
+        thread.start()
+
+    def connect(self):
+        signal.signal(signal.SIGINT, self.handler)
+
+        self.ws_process = multiprocessing.Process(
+            target=self._create_websocket,
+            kwargs=dict(access_token=self.access_token, host=self.host, client=self)
+        )
+        self.ws_process.start()
+
+    def publish(self, project_id, tasks, approve, completed, stream):
         assert project_id is not None and project_id > 0, Error.required(PROJECT_ID)
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
         assert isfunction(completed), Error.func_def_undefined(CALLBACK)
         assert stream is not None, Error.required(STREAM)
 
+        thread = threading.Thread(
+            target=self._publish,
+            kwargs=dict(
+                project_id=project_id,
+                tasks=tasks,
+                approve=approve, completed=completed,
+                stream=stream
+            )
+        )
+        thread.start()
+
+    def _publish(self, project_id, tasks, approve, completed, stream):
         self.project_id = project_id
         self.stream = stream
 
-        self._launch(project_id, approve, completed, stream)
+        self._publish_project(project_id)
 
-    def add_data(self, project_id, data):
-        response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps(data))
+        for task in tasks:
+            task['identifier'] = int(time.time())
+            self.add_data(project_id=project_id, data=task, approve=approve, completed=completed, stream=stream)
+
+    def _publish_project(self, project_id):
+        response = self._post('/api/project/%d/publish/' % project_id, data=json.dumps({}))
+        response.raise_for_status()
+
+        # todo: should update not append
+        self.projects.append(project_id)
+
+    def add_data(self, project_id, data, approve, completed, stream):
+        response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps({"tasks": [data]}))
+        response.raise_for_status()
+
+        tasks = response.json()
+
+        for task in tasks:
+            # todo: should update not append
+            self.cache.append({
+                'project_id': task['project'],
+                'task_id': task['id'],
+                'approve': approve,
+                'completed': completed,
+                'stream': stream
+            })
+
         return response
+
+    def aggregate(self, project_id,task_id, task_data):
+        self.aggregated_data.append({
+            'project_id': project_id,
+            'task_id': task_id,
+            'task_data': task_data
+        })
+
+    def remove_project(self, project_id):
+        self.projects.remove(project_id)
+
+    def is_complete(self):
+        return len(self.projects) == 0
+
+    def get_cached_task_detail(self, project_id, task_id):
+        matched = [x for x in self.cache if x['project_id'] == project_id]  # and x['task_id'] == task_id]
+        return matched
 
     def fetch_task(self, taskworker_id):
         response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
@@ -98,7 +175,11 @@ class Client:
 
     def fetch_status(self, project_id):
         response = self._get('/api/project/%d/is-done/' % project_id, data={})
-        return response
+        response.raise_for_status()
+
+        project_data = response.json()
+        is_done = project_data.get('is_done')
+        return is_done
 
     def is_auth_error(self, response):
         try:
@@ -111,8 +192,7 @@ class Client:
         return response is not None and isinstance(response, dict) and response.get("detail", "") == auth_error
 
     def _credentials_exist(self):
-        import os
-        return os.path.isfile(CREDENTIALS)
+        return os.path.isfile(self.credentials_path)
 
     def _load_tokens(self):
         with open(self.credentials_path, READ_ONLY) as infile:
@@ -159,31 +239,19 @@ class Client:
 
             self._persist_tokens()
 
-    def _launch(self, project_id, approve, completed, stream):
-        self._create_websocket(project_id, approve, completed, stream)
-        self._wait_for_results()
-
-    def _create_websocket(self, project_id, approve, completed, stream):
+    def _create_websocket(self, access_token, host, client):
         headers = {
-            AUTHORIZATION: TOKEN % self.access_token
+            AUTHORIZATION: TOKEN % access_token
         }
 
-        self.ws = WebSocketClientFactory(daemo.WEBSOCKET + self.host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
+        self.ws = WebSocketClientFactory(daemo.WEBSOCKET + host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
         self.ws.protocol = ClientProtocol
-
-        self.ws.project_id = project_id
-        self.ws.approve = approve
-        self.ws.completed = completed
-        self.ws.stream = stream
-        self.ws.client = self
-
-    def _wait_for_results(self):
-        assert self.ws is not None, Error.missing_connection()
+        self.ws.client = client
         connectWS(self.ws)
         reactor.run()
 
     def mark_completed(self):
-        reactor.stop()
+        reactor.callFromThread(reactor.stop)
 
     def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
         if headers is None:
@@ -268,3 +336,10 @@ class Client:
             response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
 
         return response
+
+    def handler(self, signum, frame):
+        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
+            if reactor.running:
+                reactor.callFromThread(reactor.stop)
+            else:
+                sys.exit(0)
