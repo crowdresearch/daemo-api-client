@@ -94,20 +94,18 @@ def approve_tweet(results):
 
 
 def create_review_task(results):
-    for result in results:
-        id = result.get('results')[0].get('id')
-        text = result.get('results')[0].get('result')
+    tasks = [{
+                 "id": result.get('results')[0].get('id'),
+                 "tweet_result": result.get('results')[0].get('result')
+             } for result in results]
 
-        client.publish(
-            project_id=REVIEW_PROJECT_ID,
-            tasks=[{
-                "id": id,
-                "tweet_result": text
-            }],
-            approve=approve_review,
-            completed=post_to_twitter,
-            stream=True
-        )
+    client.publish(
+        project_id=REVIEW_PROJECT_ID,
+        tasks=tasks,
+        approve=approve_review,
+        completed=post_to_twitter,
+        stream=True
+    )
 
 
 def approve_review(results):
