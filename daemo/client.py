@@ -63,7 +63,7 @@ class Client:
 
         self.queue = multiprocessing.Queue()
 
-        self.projects = []
+        self.projects = set()
         self.cache = []
         self.aggregated_data = []
 
@@ -152,8 +152,7 @@ class Client:
         response = self._post('/api/project/%d/publish/' % project_id, data=json.dumps({}))
         response.raise_for_status()
 
-        # todo: should update not append
-        self.projects.append(project_id)
+        self.projects.add(project_id)
 
     def add_data(self, project_id, data, approve, completed, stream):
         response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps({"tasks": [data]}))
@@ -162,7 +161,6 @@ class Client:
         tasks = response.json()
 
         for task in tasks:
-            # todo: should update not append
             self.cache.append({
                 'project_id': task['project'],
                 'task_id': task['id'],
@@ -181,11 +179,11 @@ class Client:
         })
 
     def fetch_aggregated(self, project_id):
-        matched = [x for x in self.aggregated_data if x['project_id'] == project_id]
+        matched = [x['task_data'] for x in self.aggregated_data if x['project_id'] == project_id]
         return matched
 
     def remove_project(self, project_id):
-        self.projects.remove(project_id)
+        self.projects.discard(project_id)
 
     def is_complete(self):
         return len(self.projects) == 0
@@ -427,7 +425,7 @@ class Client:
                                 self.remove_project(project_id)
 
                         else:
-                            # store it for aggregation
+                            # store it for aggregation (stream = False)
                             self.aggregate(project_id, task_id, task_data)
 
                             is_done = self.fetch_status(project_id)

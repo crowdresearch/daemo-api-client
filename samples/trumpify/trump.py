@@ -53,24 +53,25 @@ def is_from_last_interval(message, interval):
 
 
 def fetch_new_tweets(count, interval):
-    print "Fetching new tweets..."
-    messages = twitter.statuses.user_timeline(
-        screen_name=INPUT_TWITTER_NAME,
-        exclude_replies=True,
-        include_rts=False,
-        count=count
-    )
+    while True:
+        print "Fetching new tweets..."
+        messages = twitter.statuses.user_timeline(
+            screen_name=INPUT_TWITTER_NAME,
+            exclude_replies=True,
+            include_rts=False,
+            count=count
+        )
 
-    # get messages within last interval
-    messages_last_interval = [message for message in messages if is_from_last_interval(message, interval)]
+        # get messages within last interval
+        messages_last_interval = [message for message in messages if is_from_last_interval(message, interval)]
 
-    if len(messages_last_interval) > 0:
-        for message in messages_last_interval:
-            post_to_daemo(message)
-    else:
-        print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
+        if len(messages_last_interval) > 0:
+            for message in messages_last_interval:
+                post_to_daemo(message)
+        else:
+            print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
 
-    time.sleep(interval * 60)
+        time.sleep(interval * 60)
 
 
 def post_to_daemo(message):
@@ -120,7 +121,7 @@ def approve_review(results):
 
 def post_to_twitter(results):
     for result in results:
-        text = result.get('results')[0].get('result')
+        text = result.get('task_data').get('tweet_result')
 
         try:
             twitter.statuses.update(status=text)
