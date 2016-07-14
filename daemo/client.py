@@ -47,17 +47,25 @@ logger.addHandler(ch)
 logger.addHandler(fh)
 
 
+
+
 class Client:
     client_id = None
     access_token = None
     refresh_token = None
-    projects = []
-    cache = []
-    aggregated_data = []
+    projects = None
+    cache = None
+    aggregated_data = None
 
     def __init__(self, credentials_path):
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials path")
         self.credentials_path = credentials_path
+
+        self.queue = multiprocessing.Queue()
+
+        self.projects = []
+        self.cache = []
+        self.aggregated_data = []
 
         self.host = daemo.HOST
 
@@ -75,7 +83,30 @@ class Client:
 
         self.register_signals()
 
+        self.monitor_messages()
+
         self.connect()
+
+    def monitor_messages(self):
+        threading.Thread(
+            target=self.read_message
+        ).start()
+
+    def read_message(self):
+        while True:
+            data = self.queue.get(block=True)
+
+            if data is None:
+                break
+
+            thread = threading.Thread(
+                target=self.processMessage,
+                kwargs=dict(
+                    payload=data['payload'],
+                    isBinary=data['isBinary']
+                )
+            )
+            thread.start()
 
     def register_signals(self):
         thread = threading.Thread(target=signal.pause)
@@ -86,7 +117,8 @@ class Client:
 
         self.ws_process = multiprocessing.Process(
             target=self._create_websocket,
-            kwargs=dict(access_token=self.access_token, host=self.host, client=self)
+            args=(self.queue, ),
+            kwargs=dict(access_token=self.access_token, host=self.host)
         )
         self.ws_process.start()
 
@@ -114,7 +146,6 @@ class Client:
         self._publish_project(project_id)
 
         for task in tasks:
-            task['identifier'] = int(time.time())
             self.add_data(project_id=project_id, data=task, approve=approve, completed=completed, stream=stream)
 
     def _publish_project(self, project_id):
@@ -156,7 +187,7 @@ class Client:
         return len(self.projects) == 0
 
     def get_cached_task_detail(self, project_id, task_id):
-        matched = [x for x in self.cache if x['project_id'] == project_id]  # and x['task_id'] == task_id]
+        matched = [x for x in self.cache if x['project_id'] == project_id and x['task_id'] == task_id]
         return matched
 
     def fetch_task(self, taskworker_id):
@@ -239,18 +270,19 @@ class Client:
 
             self._persist_tokens()
 
-    def _create_websocket(self, access_token, host, client):
+    def _create_websocket(self, queue, access_token, host):
         headers = {
             AUTHORIZATION: TOKEN % access_token
         }
 
         self.ws = WebSocketClientFactory(daemo.WEBSOCKET + host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
         self.ws.protocol = ClientProtocol
-        self.ws.client = client
+        self.ws.queue = queue
         connectWS(self.ws)
         reactor.run()
 
     def mark_completed(self):
+        self.queue.put(None)
         reactor.callFromThread(reactor.stop)
 
     def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
@@ -339,7 +371,79 @@ class Client:
 
     def handler(self, signum, frame):
         if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
+            self.queue.put(None)
+
             if reactor.running:
                 reactor.callFromThread(reactor.stop)
             else:
                 sys.exit(0)
+
+    def processMessage(self, payload, isBinary):
+        if not isBinary:
+            response = json.loads(payload.decode('utf8'))
+
+            taskworker_id = int(response.get('taskworker_id', 0))
+            task_id = int(response.get('task_id', 0))
+            project_id = int(response.get('project_id', 0))
+
+            assert taskworker_id > 0, Error.required('taskworker_id')
+            assert task_id > 0, Error.required('task_id')
+            assert project_id > 0, Error.required('project_id')
+
+            task_configs = self.get_cached_task_detail(project_id, task_id)
+
+            if task_configs is not None and len(task_configs) > 0:
+                task = self.fetch_task(taskworker_id)
+                task.raise_for_status()
+
+                task_data = task.json()
+
+                if task is not None:
+                    task_data['accept'] = False
+
+                    for config in task_configs:
+                        approve = config['approve']
+                        completed = config['completed']
+                        stream = config['stream']
+
+                        if stream:
+                            if approve([task_data]):
+                                task_data['accept'] = True
+
+                            task_status = self.update_status(task_data)
+                            task_status.raise_for_status()
+
+                            if task_data['accept']:
+                                completed([task_data])
+
+                            is_done = self.fetch_status(project_id)
+
+                            if is_done:
+                                # remove it from global list of projects
+                                self.remove_project(project_id)
+
+                        else:
+                            # store it for aggregation
+                            self.aggregate(project_id, task_id, task_data)
+
+                            is_done = self.fetch_status(project_id)
+
+                            if is_done:
+                                tasks_data = self.fetch_aggregated(project_id)
+
+                                approvals = approve(tasks_data)
+
+                                for approval in approvals:
+                                    task_data['accept'] = approval
+
+                                    task_status = self.update_status(task_data)
+                                    task_status.raise_for_status()
+
+                                approved_tasks = [x for x in zip(tasks_data, approvals) if x[1]]
+                                completed([approved_tasks])
+
+                                # remove it from global list of projects
+                                self.remove_project(project_id)
+
+                    if self.is_complete():
+                        self.mark_completed()

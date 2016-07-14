@@ -24,7 +24,6 @@ TW_ACCESS_TOKEN_SECRET = ''
 INPUT_TWITTER_NAME = 'HillaryClinton'
 TIMESPAN_MIN = 5
 TWEET_COUNT = 10
-MAX_TWEETS = 5
 
 auth = OAuth(
     consumer_key=TW_CONSUMER_KEY,
@@ -34,7 +33,6 @@ auth = OAuth(
 )
 
 print "Initializing..."
-count = 0
 twitter = Twitter(auth=auth)
 client = Client(CREDENTIALS_FILE)
 
@@ -56,24 +54,23 @@ def is_from_last_interval(message, interval):
 
 def fetch_new_tweets(count, interval):
     print "Fetching new tweets..."
-    while count < MAX_TWEETS:
-        messages = twitter.statuses.user_timeline(
-            screen_name=INPUT_TWITTER_NAME,
-            exclude_replies=True,
-            include_rts=False,
-            count=count
-        )
+    messages = twitter.statuses.user_timeline(
+        screen_name=INPUT_TWITTER_NAME,
+        exclude_replies=True,
+        include_rts=False,
+        count=count
+    )
 
-        # get messages within last interval
-        messages_last_interval = [message for message in messages if is_from_last_interval(message, interval)]
+    # get messages within last interval
+    messages_last_interval = [message for message in messages if is_from_last_interval(message, interval)]
 
-        if len(messages_last_interval) > 0:
-            for message in messages_last_interval:
-                post_to_daemo(message)
-        else:
-            print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
+    if len(messages_last_interval) > 0:
+        for message in messages_last_interval:
+            post_to_daemo(message)
+    else:
+        print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
 
-        time.sleep(interval * 60)
+    time.sleep(interval * 60)
 
 
 def post_to_daemo(message):
