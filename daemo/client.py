@@ -180,6 +180,10 @@ class Client:
             'task_data': task_data
         })
 
+    def fetch_aggregated(self, project_id):
+        matched = [x for x in self.aggregated_data if x['project_id'] == project_id]
+        return matched
+
     def remove_project(self, project_id):
         self.projects.remove(project_id)
 

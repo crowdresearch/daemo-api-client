@@ -94,6 +94,7 @@ def approve_tweet(results):
 
 def create_review_task(results):
     for result in results:
+        id = result.get('results')[0].get('id')
         text = result.get('results')[0].get('result')
 
         client.publish(
