@@ -114,7 +114,7 @@ class DaemoClient:
 
         self.ws_process = multiprocessing.Process(
             target=self._create_websocket,
-            args=(self.queue, ),
+            args=(self.queue,),
             kwargs=dict(access_token=self.access_token, host=self.host)
         )
         self.ws_process.start()
@@ -206,7 +206,7 @@ class DaemoClient:
     def update_rating(self, project_id, ratings):
         data = {
             "project_id": project_id,
-            "ratings":ratings
+            "ratings": ratings
         }
 
         response = self._post('/api/worker-requester-rating/boomerang-feedback/', data=json.dumps(data))

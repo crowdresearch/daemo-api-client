@@ -18,8 +18,10 @@ TW_ACCESS_TOKEN = ''
 TW_ACCESS_TOKEN_SECRET = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
-TIMESPAN_MIN = 5
+MINUTES = 60
+FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
+MONITOR_INTERVAL_MIN = 60
 
 twitter = TwitterClient(
     consumer_key=TW_CONSUMER_KEY,
@@ -40,7 +42,7 @@ def fetch_new_tweets(count, interval):
         else:
             print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
 
-        time.sleep(interval * 60)
+        time.sleep(interval)
 
 
 def post_to_daemo(message):
@@ -68,20 +70,18 @@ def post_to_twitter(results):
         twitter.store(result, tweet)
 
 
-def fetch_retweet_count():
-    interval = 3600  # 1 hr
-
+def fetch_retweet_count(interval):
     while True:
         tweet = twitter.get_tweet_response()
 
         if tweet is not None:
-            seconds_elapsed= twitter.seconds_left(timestamp=tweet.get('created_at'))
+            seconds_elapsed = twitter.seconds_left(timestamp=tweet.get('created_at'))
             seconds_left = interval - seconds_elapsed
 
             if seconds_left > 0:
-                # check after 1 hr of tweet posting
                 time.sleep(seconds_left)
 
+            # check for retweet count after X min of posting to twitter
             retweet_count = twitter.get_retweet_count(tweet_id=tweet.get('id'))
 
             rating = {
@@ -93,10 +93,10 @@ def fetch_retweet_count():
             client.update_rating(project_id=PROJECT_ID, ratings=[rating])
 
 
-thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, TIMESPAN_MIN))
+thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
 thread.start()
 
-thread = threading.Thread(target=fetch_retweet_count)
+thread = threading.Thread(target=fetch_retweet_count, args=(MONITOR_INTERVAL_MIN * MINUTES,))
 thread.start()
 
 client.publish(

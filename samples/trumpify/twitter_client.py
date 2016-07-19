@@ -28,7 +28,7 @@ class TwitterClient:
 
     def is_from_last_interval(self, timestamp, interval):
         delta_seconds = self.seconds_left(timestamp)
-        return 0 < delta_seconds < (interval * 60)
+        return 0 < delta_seconds < interval
 
     def seconds_left(self, timestamp):
         current_time = datetime.now()
