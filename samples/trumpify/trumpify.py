@@ -3,16 +3,14 @@ import sys
 import threading
 import time
 
-from .twitter_client import TwitterClient
-
 sys.path.append(os.path.abspath('../../'))
 
+from samples.trumpify.twitter_client import TwitterClient
 from daemo.client import DaemoClient
 
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = -1
-REVIEW_PROJECT_ID = -1
 
 TW_CONSUMER_KEY = ''
 TW_CONSUMER_SECRET = ''
@@ -52,7 +50,7 @@ def post_to_daemo(message):
     client.publish(project_id=PROJECT_ID, tasks=[{
         "id": id,
         "tweet": text
-    }], approve=approve_tweet, completed=create_review_task, stream=True)
+    }], approve=approve_tweet, completed=post_to_twitter, stream=True)
 
 
 def approve_tweet(results):
@@ -64,43 +62,47 @@ def approve_tweet(results):
     return approvals
 
 
-def create_review_task(results):
-    tasks = [{
-                 "id": result.get('results')[0].get('id'),
-                 "tweet_result": result.get('results')[0].get('result')
-             } for result in results]
-
-    client.publish(
-        project_id=REVIEW_PROJECT_ID,
-        tasks=tasks,
-        approve=approve_review,
-        completed=post_to_twitter,
-        stream=True
-    )
-
-
-def approve_review(results):
-    approvals = []
-    for result in results:
-        text = result.get('results')[0].get('result')
-        is_approved = len(text) > 0
-        approvals.append(is_approved)
-    return approvals
-
-
 def post_to_twitter(results):
     for result in results:
-        text = result.get('task_data').get('tweet_result')
-        twitter.post(text)
+        tweet = twitter.post(result.get('results')[0].get('result'))
+        twitter.store(result, tweet)
+
+
+def fetch_retweet_count():
+    interval = 3600  # 1 hr
+
+    while True:
+        tweet = twitter.get_tweet_response()
+
+        if tweet is not None:
+            seconds_elapsed= twitter.seconds_left(timestamp=tweet.get('created_at'))
+            seconds_left = interval - seconds_elapsed
+
+            if seconds_left > 0:
+                # check after 1 hr of tweet posting
+                time.sleep(seconds_left)
+
+            retweet_count = twitter.get_retweet_count(tweet_id=tweet.get('id'))
+
+            rating = {
+                "task_id": tweet.get("task_id"),
+                "worker_id": tweet.get("worker_id"),
+                "weight": retweet_count
+            }
+
+            client.update_rating(project_id=PROJECT_ID, ratings=[rating])
 
 
 thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, TIMESPAN_MIN))
+thread.start()
+
+thread = threading.Thread(target=fetch_retweet_count)
 thread.start()
 
 client.publish(
     project_id=PROJECT_ID,
     tasks=[],
     approve=approve_tweet,
-    completed=create_review_task,
+    completed=post_to_twitter,
     stream=True
 )
