@@ -6,7 +6,6 @@ import os
 import signal
 import sys
 import threading
-import time
 from inspect import isfunction
 
 import requests
@@ -47,9 +46,7 @@ logger.addHandler(ch)
 logger.addHandler(fh)
 
 
-
-
-class Client:
+class DaemoClient:
     client_id = None
     access_token = None
     refresh_token = None
