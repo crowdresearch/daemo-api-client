@@ -203,6 +203,15 @@ class DaemoClient:
         response = self._post('/api/task-worker/bulk-update-status/', data=json.dumps(data))
         return response
 
+    def update_rating(self, project_id, ratings):
+        data = {
+            "project_id": project_id,
+            "ratings":ratings
+        }
+
+        response = self._post('/api/worker-requester-rating/boomerang-feedback/', data=json.dumps(data))
+        return response
+
     def fetch_status(self, project_id):
         response = self._get('/api/project/%d/is-done/' % project_id, data={})
         response.raise_for_status()
