@@ -119,11 +119,10 @@ class DaemoClient:
         )
         self.ws_process.start()
 
-    def publish(self, project_id, tasks, approve, completed, stream):
+    def publish(self, project_id, tasks, approve, completed, stream=False):
         assert project_id is not None and project_id > 0, Error.required(PROJECT_ID)
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
         assert isfunction(completed), Error.func_def_undefined(CALLBACK)
-        assert stream is not None, Error.required(STREAM)
 
         thread = threading.Thread(
             target=self._publish,

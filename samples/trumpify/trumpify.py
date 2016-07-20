@@ -22,27 +22,27 @@ twitter = TwitterUtils()
 client = DaemoClient(CREDENTIALS_FILE)
 
 
-def fetch_new_tweets(count, interval):
+def transform_new_tweets(count, interval):
     while True:
         messages = twitter.fetch_tweets(twitter_name=INPUT_TWITTER_NAME, count=count, interval=interval)
 
         if len(messages) > 0:
             for message in messages:
-                post_to_daemo(message)
+                translate_to_trump_version(message)
         else:
             print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
 
         time.sleep(interval)
 
 
-def post_to_daemo(message):
+def translate_to_trump_version(message):
     text = message.get('text')
     id = message.get('id')
 
     client.publish(project_id=PROJECT_ID, tasks=[{
         "id": id,
         "tweet": text
-    }], approve=approve_tweet, completed=post_to_twitter, stream=False)
+    }], approve=approve_tweet, completed=post_to_twitter)
 
 
 def get_tweet_text(worker_response):
@@ -63,7 +63,7 @@ def post_to_twitter(worker_responses):
         twitter.post(worker_response)
 
 
-def fetch_retweet_count(interval):
+def rate_worker_responses(interval):
     while True:
         tweet = twitter.monitor_next_tweet(interval)
 
@@ -80,8 +80,8 @@ def fetch_retweet_count(interval):
             client.update_rating(project_id=PROJECT_ID, ratings=[rating])
 
 
-thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
+thread = threading.Thread(target=transform_new_tweets, args=(TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
 thread.start()
 
-thread = threading.Thread(target=fetch_retweet_count, args=(MONITOR_INTERVAL_MIN * MINUTES,))
+thread = threading.Thread(target=rate_worker_responses, args=(MONITOR_INTERVAL_MIN * MINUTES,))
 thread.start()
