@@ -45,10 +45,14 @@ def post_to_daemo(message):
     }], approve=approve_tweet, completed=post_to_twitter, stream=False)
 
 
+def get_tweet_text(worker_response):
+    return worker_response.get('results')[0].get('result')
+
+
 def approve_tweet(worker_responses):
     approvals = []
     for worker_response in worker_responses:
-        text = twitter.get_tweet_text(worker_response)
+        text = get_tweet_text(worker_response)
         is_approved = len(text) > 0
         approvals.append(is_approved)
     return approvals
@@ -56,22 +60,14 @@ def approve_tweet(worker_responses):
 
 def post_to_twitter(worker_responses):
     for worker_response in worker_responses:
-        text = twitter.get_tweet_text(worker_response)
-        tweet = twitter.post(text)
-        twitter.store(worker_response, tweet)
+        twitter.post(worker_response)
 
 
 def fetch_retweet_count(interval):
     while True:
-        tweet = twitter.get_tweet_response()
+        tweet = twitter.monitor_next_tweet(interval)
 
         if tweet is not None:
-            seconds_elapsed = twitter.seconds_left(timestamp=tweet.get('created_at'))
-            seconds_left = interval - seconds_elapsed
-
-            if seconds_left > 0:
-                time.sleep(seconds_left)
-
             # check for retweet count after X min of posting to twitter
             retweet_count = twitter.get_retweet_count(tweet_id=tweet.get('id'))
 
@@ -89,11 +85,3 @@ thread.start()
 
 thread = threading.Thread(target=fetch_retweet_count, args=(MONITOR_INTERVAL_MIN * MINUTES,))
 thread.start()
-
-client.publish(
-    project_id=PROJECT_ID,
-    tasks=[],
-    approve=approve_tweet,
-    completed=post_to_twitter,
-    stream=True
-)

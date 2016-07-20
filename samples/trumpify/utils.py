@@ -1,3 +1,4 @@
+import time
 from Queue import Queue
 from datetime import datetime
 from email._parseaddr import mktime_tz, parsedate_tz
@@ -62,21 +63,23 @@ class TwitterUtils:
                                   self.is_from_last_interval(message.get('created_at'), interval)]
         return messages_last_interval
 
-    def post(self, text):
+    def post(self, worker_response):
         tweet = None
         try:
+            text = self.get_tweet_text(worker_response)
             tweet = self.client.statuses.update(status=text)
+            self.store(worker_response, tweet)
         except Exception as e:
             print e.message
         return tweet
 
-    def store(self, result, tweet):
+    def store(self, worker_response, tweet):
         self.tweets.put({
             "id": tweet.get('id'),
             "tweet": tweet.get('text'),
             "created_at": tweet.get('created_at'),
-            "task_id": result.get('task'),
-            "worker_id": result.get('worker'),
+            "task_id": worker_response.get('task'),
+            "worker_id": worker_response.get('worker'),
         })
 
     def get_tweet_response(self):
@@ -94,3 +97,15 @@ class TwitterUtils:
 
     def get_tweet_text(self, worker_response):
         return worker_response.get('results')[0].get('result')
+
+    def monitor_next_tweet(self, interval):
+        tweet = self.get_tweet_response()
+
+        if tweet is not None:
+            seconds_elapsed = self.seconds_left(timestamp=tweet.get('created_at'))
+            seconds_left = interval - seconds_elapsed
+
+            if seconds_left > 0:
+                time.sleep(seconds_left)
+
+        return tweet
