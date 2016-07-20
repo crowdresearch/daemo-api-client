@@ -5,17 +5,12 @@ import time
 
 sys.path.append(os.path.abspath('../../'))
 
-from samples.trumpify.twitter_client import TwitterClient
+from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
 
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = -1
-
-TW_CONSUMER_KEY = ''
-TW_CONSUMER_SECRET = ''
-TW_ACCESS_TOKEN = ''
-TW_ACCESS_TOKEN_SECRET = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
 MINUTES = 60
@@ -23,12 +18,7 @@ FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
-twitter = TwitterClient(
-    consumer_key=TW_CONSUMER_KEY,
-    consumer_secret=TW_CONSUMER_SECRET,
-    token=TW_ACCESS_TOKEN,
-    token_secret=TW_ACCESS_TOKEN_SECRET
-)
+twitter = TwitterUtils()
 client = DaemoClient(CREDENTIALS_FILE)
 
 
@@ -52,22 +42,23 @@ def post_to_daemo(message):
     client.publish(project_id=PROJECT_ID, tasks=[{
         "id": id,
         "tweet": text
-    }], approve=approve_tweet, completed=post_to_twitter, stream=True)
+    }], approve=approve_tweet, completed=post_to_twitter, stream=False)
 
 
-def approve_tweet(results):
+def approve_tweet(worker_responses):
     approvals = []
-    for result in results:
-        text = result.get('results')[0].get('result')
+    for worker_response in worker_responses:
+        text = twitter.get_tweet_text(worker_response)
         is_approved = len(text) > 0
         approvals.append(is_approved)
     return approvals
 
 
-def post_to_twitter(results):
-    for result in results:
-        tweet = twitter.post(result.get('results')[0].get('result'))
-        twitter.store(result, tweet)
+def post_to_twitter(worker_responses):
+    for worker_response in worker_responses:
+        text = twitter.get_tweet_text(worker_response)
+        tweet = twitter.post(text)
+        twitter.store(worker_response, tweet)
 
 
 def fetch_retweet_count(interval):

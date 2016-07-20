@@ -453,5 +453,5 @@ class DaemoClient:
                                 # remove it from global list of projects
                                 self.remove_project(project_id)
 
-                    if self.is_complete():
-                        self.mark_completed()
+                    # if self.is_complete():
+                    #     self.mark_completed()

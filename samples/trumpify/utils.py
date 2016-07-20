@@ -4,17 +4,29 @@ from email._parseaddr import mktime_tz, parsedate_tz
 
 from twitter import *
 
+from daemo.errors import Error
 
-class TwitterClient:
+TW_CONSUMER_KEY = ''
+TW_CONSUMER_SECRET = ''
+TW_ACCESS_TOKEN = ''
+TW_ACCESS_TOKEN_SECRET = ''
+
+
+class TwitterUtils:
     client = None
     tweets = Queue()
 
-    def __init__(self, consumer_key, consumer_secret, token, token_secret):
+    def __init__(self):
+        assert TW_CONSUMER_KEY != '', Error.required('TW_CONSUMER_KEY')
+        assert TW_CONSUMER_SECRET != '', Error.required('TW_CONSUMER_SECRET')
+        assert TW_ACCESS_TOKEN != '', Error.required('TW_ACCESS_TOKEN')
+        assert TW_ACCESS_TOKEN_SECRET != '', Error.required('TW_ACCESS_TOKEN_SECRET')
+
         auth = OAuth(
-            consumer_key=consumer_key,
-            consumer_secret=consumer_secret,
-            token=token,
-            token_secret=token_secret
+            consumer_key=TW_CONSUMER_KEY,
+            consumer_secret=TW_CONSUMER_SECRET,
+            token=TW_ACCESS_TOKEN,
+            token_secret=TW_ACCESS_TOKEN_SECRET
         )
 
         self.client = Twitter(auth=auth)
@@ -79,3 +91,6 @@ class TwitterClient:
         tweet = self.client.statuses.show(id=tweet_id)
         retweet_count = tweet.get('retweet_count', 0)
         return retweet_count
+
+    def get_tweet_text(self, worker_response):
+        return worker_response.get('results')[0].get('result')
