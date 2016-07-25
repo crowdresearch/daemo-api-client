@@ -96,7 +96,7 @@ class TwitterUtils:
         return retweet_count
 
     def get_tweet_text(self, worker_response):
-        return worker_response.get('results')[0].get('result')
+        return worker_response.get('fields').get('tweet')
 
     def monitor_next_tweet(self, interval):
         tweet = self.get_tweet_response()

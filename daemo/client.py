@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from inspect import isfunction
 
 import requests
@@ -54,9 +55,10 @@ class DaemoClient:
     cache = None
     aggregated_data = None
 
-    def __init__(self, credentials_path):
+    def __init__(self, credentials_path, multi_threading=False):
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials path")
         self.credentials_path = credentials_path
+        self.multi_threading = multi_threading
 
         self.queue = multiprocessing.Queue()
 
@@ -105,6 +107,9 @@ class DaemoClient:
             )
             thread.start()
 
+            if not self.multi_threading:
+                thread.join()
+
     def register_signals(self):
         thread = threading.Thread(target=signal.pause)
         thread.start()
@@ -141,8 +146,15 @@ class DaemoClient:
 
         self._publish_project(project_id)
 
+        # todo replace with hash of project, rerun, tasks data
+        batch_id = int(time.time())
+
         for task in tasks:
-            self.add_data(project_id=project_id, data=task, approve=approve, completed=completed, stream=stream)
+            self.add_data(project_id=project_id,
+                          batch_id=batch_id,
+                          data=task,
+                          approve=approve, completed=completed,
+                          stream=stream)
 
     def _publish_project(self, project_id):
         response = self._post('/api/project/%d/publish/' % project_id, data=json.dumps({}))
@@ -150,7 +162,7 @@ class DaemoClient:
 
         self.projects.add(project_id)
 
-    def add_data(self, project_id, data, approve, completed, stream):
+    def add_data(self, project_id, batch_id, data, approve, completed, stream):
         response = self._post('/api/project/%d/add-data/' % project_id, data=json.dumps({"tasks": [data]}))
         response.raise_for_status()
 
@@ -159,6 +171,7 @@ class DaemoClient:
         for task in tasks:
             self.cache.append({
                 'project_id': task['project'],
+                'batch_id': batch_id,
                 'task_id': task['id'],
                 'approve': approve,
                 'completed': completed,
@@ -167,15 +180,16 @@ class DaemoClient:
 
         return response
 
-    def aggregate(self, project_id, task_id, task_data):
+    def aggregate(self, project_id, batch_id, task_id, task_data):
         self.aggregated_data.append({
             'project_id': project_id,
+            'batch_id': batch_id,
             'task_id': task_id,
             'task_data': task_data
         })
 
-    def fetch_aggregated(self, project_id):
-        matched = [x['task_data'] for x in self.aggregated_data if x['project_id'] == project_id]
+    def fetch_aggregated(self, batch_id):
+        matched = [x['task_data'] for x in self.aggregated_data if x['batch_id'] == batch_id]
         return matched
 
     def remove_project(self, project_id):
@@ -189,9 +203,23 @@ class DaemoClient:
         return matched
 
     def fetch_task(self, taskworker_id):
-        response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
-        response.raise_for_status()
-        return response
+        try:
+            response = self._get('/api/task-worker/%d/' % taskworker_id, data={})
+            response.raise_for_status()
+
+            data = response.json()
+
+            fields = {}
+            for result in data.get('results'):
+                fields[result['key']] = result['result']
+
+            data['fields'] = fields
+            del data['results']
+
+            return data
+        except Exception as e:
+            print e.message
+            return None
 
     def update_status(self, task):
         data = {
@@ -400,12 +428,9 @@ class DaemoClient:
             task_configs = self.get_cached_task_detail(project_id, task_id)
 
             if task_configs is not None and len(task_configs) > 0:
-                task = self.fetch_task(taskworker_id)
-                task.raise_for_status()
+                task_data = self.fetch_task(taskworker_id)
 
-                task_data = task.json()
-
-                if task is not None:
+                if task_data is not None:
                     task_data['accept'] = False
 
                     for config in task_configs:
@@ -452,5 +477,5 @@ class DaemoClient:
                                 # remove it from global list of projects
                                 self.remove_project(project_id)
 
-                    # if self.is_complete():
-                    #     self.mark_completed()
+                    if self.is_complete():
+                        self.mark_completed()

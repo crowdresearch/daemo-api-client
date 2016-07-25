@@ -38,7 +38,7 @@ def transform_new_tweets(twitter_name, count, interval):
             for message in messages:
                 translate_to_trump_version(message)
         else:
-            print "@%s has not tweeted in the last %d minutes." % (twitter_name, interval)
+            print "@%s has not tweeted in the last %d minutes." % (twitter_name, int(interval / MINUTES))
 
         time.sleep(interval)
 
@@ -65,7 +65,7 @@ def get_tweet_text(worker_response):
     :param worker_response: submission made by a worker for a task
     :return: actual tweet text
     """
-    return worker_response.get('results')[0].get('result')
+    return worker_response.get('fields').get('tweet')
 
 
 def approve_tweet(worker_responses):
@@ -91,8 +91,8 @@ def post_to_twitter(worker_responses):
 
 def rate_worker_responses(interval):
     """
-    Use tweet's retweet count in first "interval" seconds as criterion for rating workers which is pushed
-    to Daemo's reputation system
+    Use tweet's retweet count in first "interval" seconds after it is posted as criterion for rating workers which is
+    pushed to Daemo's reputation system
 
     :param interval: period in seconds to wait before checking retweet count for a tweet
     """
