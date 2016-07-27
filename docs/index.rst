@@ -40,8 +40,7 @@ Documentation
 * Search documentation: :ref:`search`
 
 .. toctree::
-    :maxdepth: 1
-    :hidden:
+    :maxdepth: 2
 
     source/daemo
 

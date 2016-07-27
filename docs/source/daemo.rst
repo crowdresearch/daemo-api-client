@@ -6,10 +6,8 @@ Submodules
 
 .. toctree::
 
-   daemo.client
+    daemo.client
 
-Module contents
----------------
 
 .. automodule:: daemo
     :members:

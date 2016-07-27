@@ -24,6 +24,7 @@ setup(
     author="Daemo",
     author_email="daemo@cs.stanford.edu",
     url="https://github.com/crowdresearch/daemo-api-client/",
+    description="Client library for Daemo",
     long_description='Client library for Daemo',
     keywords="daemo crowdsourcing client"
 )
