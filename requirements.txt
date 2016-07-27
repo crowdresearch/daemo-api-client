@@ -1,3 +1,5 @@
 requests
 twisted
 autobahn
+sphinx
+sphinx-autobuild
