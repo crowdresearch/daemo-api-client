@@ -1,0 +1,29 @@
+from __future__ import print_function
+
+import sys
+from distutils.core import setup
+
+from setuptools import find_packages
+
+if sys.version_info < (2, 7):
+    print('daemo-api-client requires python version >= 2.7.x', file=sys.stderr)
+    sys.exit(1)
+
+install_requires = [
+    'requests',
+    'autobahn',
+    'twisted'
+]
+
+setup(
+    name='Daemo API Client',
+    version='1.0.0',
+    packages=find_packages(),
+    install_requires=install_requires,
+    license='MIT',
+    author="Daemo",
+    author_email="daemo@cs.stanford.edu",
+    url="https://github.com/crowdresearch/daemo-api-client/",
+    long_description='Client library for Daemo',
+    keywords="daemo crowdsourcing client"
+)
