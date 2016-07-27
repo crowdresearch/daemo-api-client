@@ -128,13 +128,13 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+# html_theme = 'alabaster'
 
-if os.environ.get('READTHEDOCS', None) != 'True':
-    import sphinx_rtd_theme
+# if os.environ.get('READTHEDOCS', None) != 'True':
+import sphinx_rtd_theme
 
-    html_theme = 'sphinx_rtd_theme'
-    html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+html_theme = 'sphinx_rtd_theme'
+html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -248,7 +248,7 @@ html_static_path = ['_static']
 # html_search_scorer = 'scorer.js'
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'DaemoAPIClientdoc'
+htmlhelp_basename = 'Daemo API Clientdoc'
 
 # -- Options for LaTeX output ---------------------------------------------
 
