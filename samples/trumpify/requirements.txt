@@ -2,4 +2,5 @@ autobahn==0.14.1
 requests==2.10.0
 twitter==1.17.1
 redis==2.10.5
+daemo-api-client
 

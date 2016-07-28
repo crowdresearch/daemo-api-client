@@ -11,8 +11,8 @@ from daemo.client import DaemoClient
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = -1
-REVIEW_PROJECT_ID = -1
+PROJECT_ID = ''
+REVIEW_PROJECT_ID = ''
 
 TW_CONSUMER_KEY = ''
 TW_CONSUMER_SECRET = ''
@@ -49,7 +49,7 @@ def post_to_daemo(message):
     text = message.get('text')
     id = message.get('id')
 
-    client.publish(project_id=PROJECT_ID, tasks=[{
+    client.publish(project_key=PROJECT_ID, tasks=[{
         "id": id,
         "tweet": text
     }], approve=approve_tweet, completed=create_review_task, stream=True)
@@ -71,7 +71,7 @@ def create_review_task(results):
              } for result in results]
 
     client.publish(
-        project_id=REVIEW_PROJECT_ID,
+        project_key=REVIEW_PROJECT_ID,
         tasks=tasks,
         approve=approve_review,
         completed=post_to_twitter,
@@ -98,7 +98,7 @@ thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, TIMESPAN_M
 thread.start()
 
 client.publish(
-    project_id=PROJECT_ID,
+    project_key=PROJECT_ID,
     tasks=[],
     approve=approve_tweet,
     completed=create_review_task,
