@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import time
+from pprint import pprint
 
 sys.path.append(os.path.abspath('../../'))
 
@@ -60,8 +61,24 @@ def translate_to_trump_version(message):
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=post_to_twitter
+        completed=post_to_twitter,
+        mock_workers=mock_workers
     )
+
+
+def mock_workers(task, num_workers):
+    """
+
+    :param task: task object with all the fields and available choices
+    :param num_workers: number of workers who will perform this task
+    :return: task_result object which provides key-value map for each field and the result
+    """
+    results = [
+        [{
+            "name": "tweet",
+            "value": "%d. Trump Trump everywhere not a Hillary to see." % x
+        }] for x in range(num_workers)]
+    return results
 
 
 def get_tweet_text(worker_response):
@@ -92,35 +109,9 @@ def post_to_twitter(worker_responses):
     :param worker_responses: submission made by a worker for a task
     """
     for worker_response in worker_responses:
-        twitter.post(worker_response)
-
-
-def rate_worker_responses(interval):
-    """
-    Use tweet's retweet count in first "interval" seconds after it is posted as criterion for rating workers which is
-    pushed to Daemo's reputation system
-
-    :param interval: period in seconds to wait before checking retweet count for a tweet
-    """
-    while True:
-        tweet = twitter.monitor_next_tweet(interval)
-
-        if tweet is not None:
-            retweet_count = twitter.get_retweet_count(tweet_id=tweet.get('id'))
-
-            rating = {
-                "task_id": tweet.get("task_id"),
-                "worker_id": tweet.get("worker_id"),
-                "weight": retweet_count
-            }
-
-            daemo.update_rating(project_key=PROJECT_ID, ratings=[rating])
+        print get_tweet_text(worker_response)
 
 
 thread = threading.Thread(target=transform_new_tweets,
                           args=(INPUT_TWITTER_NAME, TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
-thread.start()
-
-thread = threading.Thread(target=rate_worker_responses,
-                          args=(MONITOR_INTERVAL_MIN * MINUTES,))
 thread.start()

@@ -87,11 +87,13 @@ class DaemoClient:
         if self.rerun_key is not None and len(self.rerun_key) > 0:
             self._fetch_batch_config(self.rerun_key)
 
-    def publish(self, project_key, tasks, approve, completed, mock_workers, stream=False):
+    def publish(self, project_key, tasks, approve, completed, mock_workers=None, stream=False):
         assert project_key is not None and len(project_key) > 0, Error.required("project_key")
         assert tasks is not None and len(tasks) >= 0, Error.required("tasks")
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
         assert isfunction(completed), Error.func_def_undefined(CALLBACK)
+        if mock_workers is not None:
+            assert isfunction(mock_workers), Error.func_def_undefined("mock_workers")
 
         thread = threading.Thread(
             target=self._publish,
@@ -105,6 +107,15 @@ class DaemoClient:
             )
         )
         thread.start()
+
+    def update_rating(self, project_key, ratings):
+        data = {
+            "project_id": project_key,
+            "ratings": ratings
+        }
+
+        response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
+        return response
 
     def _fetch_batch_config(self, rerun_key):
         data = self._fetch_batch(rerun_key)
@@ -143,12 +154,21 @@ class DaemoClient:
         # if no batch found, push this as new dataset
         if batch is None:
             for task in tasks:
-                self._create_task(project_key=project_key,
-                                  batch=batch,
-                                  data=task,
-                                  approve=approve, completed=completed,
-                                  stream=stream,
-                                  rerun_key=rerun_key)
+                new_tasks = self._create_task(project_key=project_key,
+                                              batch=batch,
+                                              data=task,
+                                              approve=approve, completed=completed,
+                                              stream=stream,
+                                              rerun_key=rerun_key)
+                if new_tasks is not None and len(new_tasks) > 0 and mock_workers is not None:
+                    thread = threading.Thread(
+                        target=self._mock_task,
+                        kwargs=dict(
+                            task_id=new_tasks[0]["id"],
+                            mock_workers=mock_workers
+                        )
+                    )
+                    thread.start()
         else:
             # relay old task results again to the processing queue
             old_tasks = [{
@@ -160,7 +180,7 @@ class DaemoClient:
             self._map_task(project_key, old_tasks, approve, completed, stream, rerun_key)
 
             for task in old_tasks:
-                task_workers = self._get_task_results(task["id"])
+                task_workers = self._get_task_results_by_task_id(task["id"])
 
                 # re-queue submitted results
                 for task_worker in task_workers:
@@ -205,6 +225,38 @@ class DaemoClient:
 
             self.batches_in_progress.add(task["batch"]["id"])
 
+    def _mock_task(self, task_id, mock_workers):
+        task = self._fetch_task(task_id)
+
+        if task is not None:
+            num_workers = task["project"]["num_workers"]
+
+            responses = mock_workers(task, num_workers)
+
+            assert responses is not None and len(
+                responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
+                len(responses), num_workers)
+
+            results = [{
+                           "items": [{
+                                         "result": field["value"],
+                                         "template_item": self._get_template_item_id(field["name"],
+                                                                                     task["template"]["fields"])
+                                     } for field in response]
+                       } for response in responses]
+
+            self._submit_results(
+                task["id"],
+                results
+            )
+
+    def _get_template_item_id(self, template_item_name, template_items):
+        fields = filter(lambda x: x["name"] == template_item_name, template_items)
+
+        if fields is not None and len(fields) > 0:
+            return fields[0]["id"]
+        return -1
+
     def _get_task_map(self, project_key, task_id, batch_id):
         matched = filter(
             lambda x: x["project_key"] == project_key and x["task_id"] == task_id and x["batch_id"] == batch_id,
@@ -223,13 +275,13 @@ class DaemoClient:
 
         return None
 
-    def remove_batch(self, batch_id):
+    def _remove_batch(self, batch_id):
         self.batches_in_progress.discard(batch_id)
 
-    def is_complete(self):
+    def _all_batches_complete(self):
         return len(self.batches_in_progress) == 0
 
-    def mark_completed(self):
+    def _stop(self):
         self.queue.put(None)
         reactor.callFromThread(reactor.stop)
 
@@ -311,10 +363,10 @@ class DaemoClient:
 
     def _monitor_messages(self):
         threading.Thread(
-            target=self.read_message
+            target=self._read_message
         ).start()
 
-    def read_message(self):
+    def _read_message(self):
         while True:
             data = self.queue.get(block=True)
 
@@ -351,7 +403,7 @@ class DaemoClient:
                 task_configs = self._get_task_map(project_key, task_id, batch["id"])
 
                 if task_configs is not None and len(task_configs) > 0:
-                    task_data = self.fetch_task(taskworker_id)
+                    task_data = self._get_task_results_by_taskworker_id(taskworker_id)
 
                     if task_data is not None:
                         task_data["accept"] = False
@@ -366,7 +418,7 @@ class DaemoClient:
                                 if approve([task_data]):
                                     task_data["accept"] = True
 
-                                task_status = self.update_status(task_data)
+                                task_status = self._update_status(task_data)
                                 task_status.raise_for_status()
 
                                 if task_data["accept"]:
@@ -376,7 +428,7 @@ class DaemoClient:
 
                                 if is_done:
                                     # remove it from global list of projects
-                                    self.remove_batch(aggregation_id)
+                                    self._remove_batch(aggregation_id)
 
                             else:
                                 # store it for aggregation (stream = False)
@@ -392,19 +444,64 @@ class DaemoClient:
                                     for approval in approvals:
                                         task_data["accept"] = approval
 
-                                        task_status = self.update_status(task_data)
+                                        task_status = self._update_status(task_data)
                                         task_status.raise_for_status()
 
                                     approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
 
                                     completed(approved_tasks)
 
-                                    self.remove_batch(aggregation_id)
+                                    self._remove_batch(aggregation_id)
 
-                        if self.is_complete():
-                            self.mark_completed()
+                        if self._all_batches_complete():
+                            self._stop()
 
     # Backend API ======================================================================================================
+
+    def _fetch_task(self, task_id):
+        response = self._get("/api/task/%d/" % task_id, data=json.dumps({}))
+        response.raise_for_status()
+
+        data = response.json()
+
+        fields = []
+
+        if "items" in data["template"]:
+            for item in data["template"]["items"]:
+                if item["role"] == "input":
+                    options = []
+
+                    if "choices" in item["aux_attributes"]:
+                        for option in item["aux_attributes"]["choices"]:
+                            options.append({
+                                "position": option["position"],
+                                "value": option["value"],
+                            })
+
+                    fields.append({
+                        "id": item["id"],
+                        "name": item["name"],
+                        "type": item["type"],
+                        "position": item["position"],
+                        "question": item["aux_attributes"]["question"]["value"],
+                        "options": options
+                    })
+
+        task = {
+            "id": data["id"],
+            "project": {
+                "id": data["project_data"]["id"],
+                "key": data["project_data"]["hash_id"],
+                "name": data["project_data"]["name"],
+                "num_workers": data["project_data"]["repetition"],
+            },
+            "template": {
+                "id": data["template"]["id"],
+                "fields": fields
+            }
+        }
+
+        return task
 
     def _fetch_batch(self, rerun_key):
         response = self._get("/api/task/?filter_by=rerun_key&rerun_key=%s" % rerun_key, data=json.dumps({}))
@@ -429,13 +526,13 @@ class DaemoClient:
 
         return response.json()
 
-    def _get_task_results(self, task_id):
+    def _get_task_results_by_task_id(self, task_id):
         response = self._get("/api/task-worker/list-submissions/?task_id=%d" % task_id, data=json.dumps({}))
         response.raise_for_status()
 
         return response.json()
 
-    def fetch_task(self, taskworker_id):
+    def _get_task_results_by_taskworker_id(self, taskworker_id):
         try:
             response = self._get("/api/task-worker/%d/" % taskworker_id, data={})
             response.raise_for_status()
@@ -454,22 +551,13 @@ class DaemoClient:
             print e.message
             return None
 
-    def update_status(self, task):
+    def _update_status(self, task):
         data = {
             "status": STATUS_ACCEPTED if task["accept"] else STATUS_REJECTED,
             "workers": [task["id"]]
         }
 
         response = self._post("/api/task-worker/bulk-update-status/", data=json.dumps(data))
-        return response
-
-    def update_rating(self, project_key, ratings):
-        data = {
-            "project_id": project_key,
-            "ratings": ratings
-        }
-
-        response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
         return response
 
     def _fetch_batch_status(self, project_key, aggregation_id):
