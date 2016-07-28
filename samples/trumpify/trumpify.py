@@ -10,7 +10,8 @@ from daemo.client import DaemoClient
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = -1
+PROJECT_ID = ''
+RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
 MINUTES = 60
@@ -19,7 +20,7 @@ TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
 twitter = TwitterUtils()
-daemo = DaemoClient(CREDENTIALS_FILE)
+daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
 
 def transform_new_tweets(twitter_name, count, interval):
@@ -52,10 +53,20 @@ def translate_to_trump_version(message):
     text = message.get('text')
     id = message.get('id')
 
-    daemo.publish(project_id=PROJECT_ID, tasks=[{
-        "id": id,
-        "tweet": text
-    }], approve=approve_tweet, completed=post_to_twitter)
+    daemo.publish(
+        project_key=PROJECT_ID,
+        tasks=[{
+            "id": id,
+            "tweet": text
+        }],
+        approve=approve_tweet,
+        completed=post_to_twitter,
+        mock_workers=mock_workers
+    )
+
+
+def mock_workers(task, num_workers):
+    return
 
 
 def get_tweet_text(worker_response):
@@ -108,7 +119,7 @@ def rate_worker_responses(interval):
                 "weight": retweet_count
             }
 
-            daemo.update_rating(project_id=PROJECT_ID, ratings=[rating])
+            daemo.update_rating(project_key=PROJECT_ID, ratings=[rating])
 
 
 thread = threading.Thread(target=transform_new_tweets,

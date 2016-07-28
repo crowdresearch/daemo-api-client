@@ -12,16 +12,16 @@ class ClientProtocol(WebSocketClientProtocol):
     def onOpen(self):
         logging.debug("### channel opened ###")
 
-        assert hasattr(self.factory, 'queue') and self.factory.queue is not None, \
-            Error.required('queue')
+        assert hasattr(self.factory, "queue") and self.factory.queue is not None, \
+            Error.required("queue")
 
     def onMessage(self, payload, isBinary):
         if not isBinary:
             logging.debug("<: {}".format(payload.decode("utf8")))
 
         self.factory.queue.put({
-            'payload': payload,
-            'isBinary': isBinary
+            "payload": payload,
+            "isBinary": isBinary
         })
 
     def onSend(self, data):

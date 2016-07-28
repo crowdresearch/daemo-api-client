@@ -67,8 +67,10 @@ class TwitterUtils:
         tweet = None
         try:
             text = self.get_tweet_text(worker_response)
-            tweet = self.client.statuses.update(status=text)
-            self.store(worker_response, tweet)
+
+            if text is not None:
+                tweet = self.client.statuses.update(status=text)
+                self.store(worker_response, tweet)
         except Exception as e:
             print e.message
         return tweet
@@ -96,7 +98,9 @@ class TwitterUtils:
         return retweet_count
 
     def get_tweet_text(self, worker_response):
-        return worker_response.get('fields').get('tweet')
+        if worker_response is not None:
+            return worker_response.get('fields').get('tweet')
+        return None
 
     def monitor_next_tweet(self, interval):
         tweet = self.get_tweet_response()
