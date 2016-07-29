@@ -85,9 +85,7 @@ class TwitterUtils:
         })
 
     def get_tweet_response(self):
-        if self.has_tweet_responses():
-            return self.tweets.get()
-        return None
+        return self.tweets.get()
 
     def has_tweet_responses(self):
         return self.tweets.qsize() > 0

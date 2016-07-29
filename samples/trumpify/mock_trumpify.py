@@ -2,7 +2,6 @@ import os
 import sys
 import threading
 import time
-from pprint import pprint
 
 sys.path.append(os.path.abspath('../../'))
 
