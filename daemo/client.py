@@ -7,7 +7,6 @@ import signal
 import sys
 import threading
 from inspect import isfunction
-from pprint import pprint
 
 import requests
 from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
@@ -48,25 +47,44 @@ logger.addHandler(fh)
 
 
 class DaemoClient:
-    client_id = None
-    access_token = None
-    refresh_token = None
+    """
+    Initializes Daemo Client
+        - Authentication with Daemo host server
+        - Connect to the host
+        - Fetch any submitted worker responses using the rerun_key
 
-    ws_process = None
+    First download the credentials file from your Daemo User Profile. Fill in the RERUN_KEY which is considered incremental number here for each run.
+    ::
+        CREDENTIALS_FILE = 'credentials.json'
+        RERUN_KEY = '0001'
 
-    projects = None
-    batches = {}
-    batches_in_progress = set()
-    cache = []
-    aggregated_data = []
+        daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
-    host = daemo.HOST
-
-    def __init__(self, credentials_path, rerun_key=None, multi_threading=False):
+    :param credentials_path: path of the daemo credentials file which can be downloaded from daemo user profile (**Menu** >> **Get Credentials**)
+    :param host: daemo server to connect to - uses a default server if not defined
+    :param rerun_key: a string used to differentiate each script run. If this key is same, it replays the last results from worker responses and brings you to the last point when script stopped execution.
+    :param multi_threading: False by default, bool value to enable multi-threaded response handling
+    """
+    def __init__(self, credentials_path, host=daemo.HOST, rerun_key=None, multi_threading=False):
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
+
+        self.client_id = None
+        self.access_token = None
+        self.refresh_token = None
+
+        self.ws_process = None
+
+        self.projects = None
+        self.batches = {}
+        self.batches_in_progress = set()
+        self.cache = []
+        self.aggregated_data = []
+
         self.credentials_path = credentials_path
         self.rerun_key = rerun_key
         self.multi_threading = multi_threading
+
+        self.host = host
 
         self.queue = multiprocessing.Queue()
 
@@ -88,6 +106,61 @@ class DaemoClient:
             self._fetch_batch_config(self.rerun_key)
 
     def publish(self, project_key, tasks, approve, completed, mock_workers=None, stream=False):
+        """
+        Publishes the project if not already published and creates new tasks based on the tasks list provided
+
+        A typical usage is given below and each of the callbacks are explained further:
+        ::
+            daemo.publish(
+                project_key='k0BXZxVz4P3w',
+                tasks=[{
+                    "id": id,
+                    "tweet": text
+                }],
+                approve=approve_tweet,
+                completed=post_to_twitter
+            )
+
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project.
+        :param tasks: list object with data for each task in a key-value pair where each key is used in Daemo's Project Authoring Interface as replaceable value
+
+        A typical tasks list object is given below which passes an id and tweet text as input for each task. Remember these keys -- id, tweet -- have been used while creating task fields on Daemo task authoring inteface.
+        ::
+            tasks=[{
+                "id": id,
+                "tweet": text
+            }]
+
+        :param approve: a callback function which process worker responses to produce boolean value indicating if each worker response should be accepted and thus, paid or not.
+
+        A typical approve callback function is given below which checks if tweet text in worker response is not empty.
+        ::
+            def approve_tweet(worker_responses):
+                approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
+                return approvals
+
+        :param completed: a callback function similiar to approve callback but process only the approved worker responses. It doesn't return any value.
+
+        A typical completed callback function is given below which posts all the approved worker responses to twitter.
+        ::
+            def post_to_twitter(worker_responses):
+                for worker_response in worker_responses:
+                    twitter.post(worker_response)
+
+        :param mock_workers: a callback function which simulates workers passing responses to different tasks
+
+        A typical mock_workers callback function is given below which provides some text for tweet on behalf of *count* number of workers.
+        ::
+            def mock_workers(task, count):
+                results = [
+                    [{
+                        "name": "tweet",
+                        "value": "%d. Trump Trump everywhere not a Hillary to see." % num
+                    }] for num in range(count)]
+                return results
+
+        :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
+        """
         assert project_key is not None and len(project_key) > 0, Error.required("project_key")
         assert tasks is not None and len(tasks) >= 0, Error.required("tasks")
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
@@ -108,7 +181,23 @@ class DaemoClient:
         )
         thread.start()
 
-    def update_rating(self, project_key, ratings):
+    def rate(self, project_key, ratings):
+        """
+
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project.
+        :param ratings: list object which provides ratings for one or more worker responses.
+        Below, a single rating object is shown which must have three parameters - *task_id*, *worker_id* and *weight*.
+        ::
+            rating = {
+                    "task_id": unique ID for the task (is available from the worker response),
+                    "worker_id": unique ID for the worker (is available from the worker response),
+                    "weight": rating value (can be integer or float)
+            }
+
+            ratings = [rating]
+
+        :return: rating response
+        """
         data = {
             "project_id": project_key,
             "ratings": ratings
@@ -313,7 +402,7 @@ class DaemoClient:
         tasks = zip(new_tasks, orig_tasks)
         return filter(lambda task: self.doesnt_match_task(task[0], task[1]), tasks)
 
-    def handler(self, signum, frame):
+    def _handler(self, signum, frame):
         if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
             self.queue.put(None)
 
@@ -341,7 +430,7 @@ class DaemoClient:
     # Web-socket Communication =========================================================================================
 
     def _connect(self):
-        signal.signal(signal.SIGINT, self.handler)
+        signal.signal(signal.SIGINT, self._handler)
 
         self.ws_process = multiprocessing.Process(
             target=self._create_websocket,
@@ -580,7 +669,7 @@ class DaemoClient:
 
     # Authentication ===================================================================================================
 
-    def is_auth_error(self, response):
+    def _is_auth_error(self, response):
         try:
             response = response.json()
         except Exception as e:
@@ -656,7 +745,7 @@ class DaemoClient:
 
         response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
 
-        if self.is_auth_error(response):
+        if self._is_auth_error(response):
             self._refresh_token()
 
             if authorization:
@@ -684,7 +773,7 @@ class DaemoClient:
 
         response = self.session.post(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
 
-        if self.is_auth_error(response):
+        if self._is_auth_error(response):
             self._refresh_token()
 
             if authorization:
@@ -712,7 +801,7 @@ class DaemoClient:
 
         response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
 
-        if self.is_auth_error(response):
+        if self._is_auth_error(response):
             self._refresh_token()
 
             if authorization:
