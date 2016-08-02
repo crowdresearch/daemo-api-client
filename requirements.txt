@@ -1,6 +1,6 @@
-requests
+autobahn==0.14.1
+requests==2.10.0
 twisted
-autobahn
 sphinx
 sphinx-autobuild
 sphinx_rtd_theme
