@@ -37,13 +37,6 @@ STATUS_ACCEPTED = 3
 STATUS_REJECTED = 4
 
 __version__ = daemo.__version__
-logger = logging.getLogger(__name__)
-fh = logging.FileHandler(".log")
-fh.setLevel(logging.DEBUG)
-ch = logging.StreamHandler()
-ch.setLevel(logging.DEBUG)
-logger.addHandler(ch)
-logger.addHandler(fh)
 
 
 class DaemoClient:
@@ -67,7 +60,7 @@ class DaemoClient:
     """
 
     def __init__(self, credentials_path, host=daemo.HOST, rerun_key=None, multi_threading=False):
-        logger.debug(msg="initializing client...")
+        logging.debug(msg="initializing client...")
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
 
         self.client_id = None
@@ -164,7 +157,7 @@ class DaemoClient:
         :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
         """
 
-        logger.debug(msg="publish function called...")
+        logging.debug(msg="publish function called...")
         assert project_key is not None and len(project_key) > 0, Error.required("project_key")
         assert tasks is not None and len(tasks) >= 0, Error.required("tasks")
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
@@ -202,7 +195,7 @@ class DaemoClient:
 
         :return: rating response
         """
-        logger.debug(msg="rate function called")
+        logging.debug(msg="rate function called")
         data = {
             "project_id": project_key,
             "ratings": ratings
@@ -212,7 +205,7 @@ class DaemoClient:
         return response
 
     def _fetch_batch_config(self, rerun_key):
-        logger.debug(msg="fetching batch config...")
+        logging.debug(msg="fetching batch config...")
 
         data = self._fetch_batch(rerun_key)
 
@@ -249,7 +242,7 @@ class DaemoClient:
 
         # if no batch found, push this as new dataset
         if batch is None:
-            logger.debug(msg="no batch found.")
+            logging.debug(msg="no batch found.")
             new_tasks = self._create_task(project_key=project_key,
                                           batch=batch,
                                           data=tasks,
@@ -266,8 +259,8 @@ class DaemoClient:
                 )
                 thread.start()
         else:
-            logger.debug(msg="batch found.")
-            logger.debug(msg="relay old task results again to the processing queue")
+            logging.debug(msg="batch found.")
+            logging.debug(msg="relay old task results again to the processing queue")
             old_tasks = [{
                              "project": project["id"],
                              "batch": batch,
@@ -294,7 +287,7 @@ class DaemoClient:
                     })
 
     def _create_task(self, project_key, batch, data, approve, completed, stream, rerun_key):
-        logger.debug(msg="creating tasks...")
+        logging.debug(msg="creating tasks...")
 
         batch_id = None
 
@@ -325,7 +318,7 @@ class DaemoClient:
             self.batches_in_progress.add(task["batch"]["id"])
 
     def _mock_task(self, task_id, mock_workers):
-        logger.debug(msg="mocking workers")
+        logging.debug(msg="mocking workers")
 
         task = self._fetch_task(task_id)
 
@@ -383,7 +376,7 @@ class DaemoClient:
         return len(self.batches_in_progress) == 0
 
     def _stop(self):
-        logger.debug(msg="stop everything")
+        logging.debug(msg="stop everything")
         self.queue.put(None)
         reactor.callFromThread(reactor.stop)
 
@@ -429,7 +422,7 @@ class DaemoClient:
         thread.start()
 
     def _aggregate(self, project_key, task_id, aggregation_id, task_data):
-        logger.debug(msg="aggregating...")
+        logging.debug(msg="aggregating...")
         self.aggregated_data.append({
             "batch_id": aggregation_id,
             "project_key": project_key,
@@ -454,7 +447,7 @@ class DaemoClient:
         self.ws_process.start()
 
     def _create_websocket(self, queue, access_token, host):
-        logger.debug(msg="open websocket connection")
+        logging.debug(msg="open websocket connection")
 
         headers = {
             AUTHORIZATION: TOKEN % access_token
@@ -478,7 +471,7 @@ class DaemoClient:
             if data is None:
                 break
 
-            logger.debug(msg="got new message")
+            logging.debug(msg="got new message")
 
             thread = threading.Thread(
                 target=self._processMessage,
@@ -493,7 +486,7 @@ class DaemoClient:
                 thread.join()
 
     def _processMessage(self, payload, isBinary):
-        logger.debug(msg="process message")
+        logging.debug(msg="process message")
 
         if not isBinary:
             response = json.loads(payload.decode("utf8"))
@@ -524,27 +517,27 @@ class DaemoClient:
                             aggregation_id = config["aggregation_id"]
 
                             if stream:
-                                logger.debug(msg="streaming responses...")
+                                logging.debug(msg="streaming responses...")
 
-                                logger.debug(msg="calling approved callback...")
+                                logging.debug(msg="calling approved callback...")
                                 if approve([task_data]):
                                     task_data["accept"] = True
-                                    logger.debug(msg="task approved.")
+                                    logging.debug(msg="task approved.")
                                 else:
-                                    logger.debug(msg="task rejected.")
+                                    logging.debug(msg="task rejected.")
 
                                 task_status = self._update_status(task_data)
                                 task_status.raise_for_status()
 
                                 if task_data["accept"]:
-                                    logger.debug(msg="calling completed callback")
+                                    logging.debug(msg="calling completed callback")
                                     completed([task_data])
 
                                 is_done = self._fetch_batch_status(project_key, aggregation_id)
-                                logger.debug(msg="is batch done? %s"%is_done)
+                                logging.debug(msg="is batch done? %s"%is_done)
 
                                 if is_done:
-                                    logger.debug(msg="removing batch...")
+                                    logging.debug(msg="removing batch...")
                                     # remove it from global list of projects
                                     self._remove_batch(aggregation_id)
 
@@ -555,10 +548,10 @@ class DaemoClient:
                                 is_done = self._fetch_batch_status(project_key, aggregation_id)
 
                                 if is_done:
-                                    logger.debug(msg="is batch done? yes")
+                                    logging.debug(msg="is batch done? yes")
                                     tasks_data = self._get_aggregated(aggregation_id)
 
-                                    logger.debug(msg="calling approved callback...")
+                                    logging.debug(msg="calling approved callback...")
                                     approvals = approve(tasks_data)
 
                                     for approval in approvals:
@@ -569,23 +562,23 @@ class DaemoClient:
 
                                     approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
 
-                                    logger.debug(msg="calling completed callback...")
+                                    logging.debug(msg="calling completed callback...")
                                     completed(approved_tasks)
 
-                                    logger.debug(msg="removing batch...")
+                                    logging.debug(msg="removing batch...")
                                     self._remove_batch(aggregation_id)
                                 else:
-                                    logger.debug(msg="is batch done? no")
+                                    logging.debug(msg="is batch done? no")
 
                         if self._all_batches_complete():
-                            logger.debug(msg="is all done? yes")
+                            logging.debug(msg="is all done? yes")
                             self._stop()
                         else:
-                            logger.debug("is all done? no")
+                            logging.debug("is all done? no")
                     else:
-                        logger.debug(msg="no worker responses found yet.")
+                        logging.debug(msg="no worker responses found yet.")
                 else:
-                    logger.debug(msg="no task mapping found.")
+                    logging.debug(msg="no task mapping found.")
 
 
     # Backend API ======================================================================================================

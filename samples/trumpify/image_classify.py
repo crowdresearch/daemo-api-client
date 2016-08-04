@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 
@@ -9,6 +10,10 @@ CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_ID = ''
 RERUN_KEY = ''
+
+logger = logging.getLogger()
+logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logger.setLevel(logging.DEBUG)
 
 daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 

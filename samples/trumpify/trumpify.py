@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 import threading
 import time
 
@@ -19,6 +20,9 @@ FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
+logger = logging.getLogger()
+logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logger.setLevel(logging.DEBUG)
 twitter = TwitterUtils()
 daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
