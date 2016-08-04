@@ -114,7 +114,7 @@ def rate_worker_responses(interval):
                 "weight": retweet_count
             }
 
-            daemo.update_rating(project_key=PROJECT_ID, ratings=[rating])
+            daemo.rate(project_key=PROJECT_ID, ratings=[rating])
 
 
 thread = threading.Thread(target=transform_new_tweets,

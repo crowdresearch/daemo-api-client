@@ -65,7 +65,9 @@ class DaemoClient:
     :param rerun_key: a string used to differentiate each script run. If this key is same, it replays the last results from worker responses and brings you to the last point when script stopped execution.
     :param multi_threading: False by default, bool value to enable multi-threaded response handling
     """
+
     def __init__(self, credentials_path, host=daemo.HOST, rerun_key=None, multi_threading=False):
+        logger.debug(msg="initializing client...")
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
 
         self.client_id = None
@@ -161,6 +163,8 @@ class DaemoClient:
 
         :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
         """
+
+        logger.debug(msg="publish function called...")
         assert project_key is not None and len(project_key) > 0, Error.required("project_key")
         assert tasks is not None and len(tasks) >= 0, Error.required("tasks")
         assert isfunction(approve), Error.func_def_undefined(APPROVE)
@@ -198,6 +202,7 @@ class DaemoClient:
 
         :return: rating response
         """
+        logger.debug(msg="rate function called")
         data = {
             "project_id": project_key,
             "ratings": ratings
@@ -207,6 +212,8 @@ class DaemoClient:
         return response
 
     def _fetch_batch_config(self, rerun_key):
+        logger.debug(msg="fetching batch config...")
+
         data = self._fetch_batch(rerun_key)
 
         # data got : tasks -> project + batch
@@ -242,24 +249,25 @@ class DaemoClient:
 
         # if no batch found, push this as new dataset
         if batch is None:
-            for task in tasks:
-                new_tasks = self._create_task(project_key=project_key,
-                                              batch=batch,
-                                              data=task,
-                                              approve=approve, completed=completed,
-                                              stream=stream,
-                                              rerun_key=rerun_key)
-                if new_tasks is not None and len(new_tasks) > 0 and mock_workers is not None:
-                    thread = threading.Thread(
-                        target=self._mock_task,
-                        kwargs=dict(
-                            task_id=new_tasks[0]["id"],
-                            mock_workers=mock_workers
-                        )
+            logger.debug(msg="no batch found.")
+            new_tasks = self._create_task(project_key=project_key,
+                                          batch=batch,
+                                          data=tasks,
+                                          approve=approve, completed=completed,
+                                          stream=stream,
+                                          rerun_key=rerun_key)
+            if new_tasks is not None and len(new_tasks) > 0 and mock_workers is not None:
+                thread = threading.Thread(
+                    target=self._mock_task,
+                    kwargs=dict(
+                        task_id=new_tasks[0]["id"],
+                        mock_workers=mock_workers
                     )
-                    thread.start()
+                )
+                thread.start()
         else:
-            # relay old task results again to the processing queue
+            logger.debug(msg="batch found.")
+            logger.debug(msg="relay old task results again to the processing queue")
             old_tasks = [{
                              "project": project["id"],
                              "batch": batch,
@@ -286,6 +294,8 @@ class DaemoClient:
                     })
 
     def _create_task(self, project_key, batch, data, approve, completed, stream, rerun_key):
+        logger.debug(msg="creating tasks...")
+
         batch_id = None
 
         if batch is not None:
@@ -315,6 +325,8 @@ class DaemoClient:
             self.batches_in_progress.add(task["batch"]["id"])
 
     def _mock_task(self, task_id, mock_workers):
+        logger.debug(msg="mocking workers")
+
         task = self._fetch_task(task_id)
 
         if task is not None:
@@ -371,6 +383,7 @@ class DaemoClient:
         return len(self.batches_in_progress) == 0
 
     def _stop(self):
+        logger.debug(msg="stop everything")
         self.queue.put(None)
         reactor.callFromThread(reactor.stop)
 
@@ -416,6 +429,7 @@ class DaemoClient:
         thread.start()
 
     def _aggregate(self, project_key, task_id, aggregation_id, task_data):
+        logger.debug(msg="aggregating...")
         self.aggregated_data.append({
             "batch_id": aggregation_id,
             "project_key": project_key,
@@ -440,6 +454,8 @@ class DaemoClient:
         self.ws_process.start()
 
     def _create_websocket(self, queue, access_token, host):
+        logger.debug(msg="open websocket connection")
+
         headers = {
             AUTHORIZATION: TOKEN % access_token
         }
@@ -462,6 +478,8 @@ class DaemoClient:
             if data is None:
                 break
 
+            logger.debug(msg="got new message")
+
             thread = threading.Thread(
                 target=self._processMessage,
                 kwargs=dict(
@@ -475,6 +493,8 @@ class DaemoClient:
                 thread.join()
 
     def _processMessage(self, payload, isBinary):
+        logger.debug(msg="process message")
+
         if not isBinary:
             response = json.loads(payload.decode("utf8"))
 
@@ -504,18 +524,27 @@ class DaemoClient:
                             aggregation_id = config["aggregation_id"]
 
                             if stream:
+                                logger.debug(msg="streaming responses...")
+
+                                logger.debug(msg="calling approved callback...")
                                 if approve([task_data]):
                                     task_data["accept"] = True
+                                    logger.debug(msg="task approved.")
+                                else:
+                                    logger.debug(msg="task rejected.")
 
                                 task_status = self._update_status(task_data)
                                 task_status.raise_for_status()
 
                                 if task_data["accept"]:
+                                    logger.debug(msg="calling completed callback")
                                     completed([task_data])
 
                                 is_done = self._fetch_batch_status(project_key, aggregation_id)
+                                logger.debug(msg="is batch done? %s"%is_done)
 
                                 if is_done:
+                                    logger.debug(msg="removing batch...")
                                     # remove it from global list of projects
                                     self._remove_batch(aggregation_id)
 
@@ -526,8 +555,10 @@ class DaemoClient:
                                 is_done = self._fetch_batch_status(project_key, aggregation_id)
 
                                 if is_done:
+                                    logger.debug(msg="is batch done? yes")
                                     tasks_data = self._get_aggregated(aggregation_id)
 
+                                    logger.debug(msg="calling approved callback...")
                                     approvals = approve(tasks_data)
 
                                     for approval in approvals:
@@ -538,12 +569,24 @@ class DaemoClient:
 
                                     approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
 
+                                    logger.debug(msg="calling completed callback...")
                                     completed(approved_tasks)
 
+                                    logger.debug(msg="removing batch...")
                                     self._remove_batch(aggregation_id)
+                                else:
+                                    logger.debug(msg="is batch done? no")
 
                         if self._all_batches_complete():
+                            logger.debug(msg="is all done? yes")
                             self._stop()
+                        else:
+                            logger.debug("is all done? no")
+                    else:
+                        logger.debug(msg="no worker responses found yet.")
+                else:
+                    logger.debug(msg="no task mapping found.")
+
 
     # Backend API ======================================================================================================
 
@@ -606,7 +649,7 @@ class DaemoClient:
 
     def _add_data(self, project_key, batch_id, data, rerun_key):
         response = self._post("/api/project/%s/add-data/" % project_key, data=json.dumps({
-            "tasks": [data],
+            "tasks": data,
             "parent_batch_id": batch_id,
             "rerun_key": rerun_key
         }))
@@ -675,9 +718,8 @@ class DaemoClient:
         except Exception as e:
             pass
 
-        auth_error = CREDENTIALS_NOT_PROVIDED
-
-        return response is not None and isinstance(response, dict) and response.get("detail", "") == auth_error
+        return response is not None and isinstance(response, dict) and response.get("detail",
+                                                                                    "") == CREDENTIALS_NOT_PROVIDED
 
     def _credentials_exist(self):
         return os.path.isfile(self.credentials_path)
@@ -685,7 +727,6 @@ class DaemoClient:
     def _load_tokens(self):
         with open(self.credentials_path, READ_ONLY) as infile:
             fcntl.flock(infile.fileno(), fcntl.LOCK_EX)
-
             data = json.load(infile)
 
             assert data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID)
@@ -722,6 +763,11 @@ class DaemoClient:
             raise AuthException("Error refreshing access token. Please retry again.")
         else:
             response = response.json()
+
+            assert response[ACCESS_TOKEN] is not None and len(response[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN)
+            assert response[REFRESH_TOKEN] is not None and len(response[REFRESH_TOKEN]) > 0, Error.required(
+                REFRESH_TOKEN)
+
             self.access_token = response.get(ACCESS_TOKEN)
             self.refresh_token = response.get(REFRESH_TOKEN)
 

@@ -4,8 +4,7 @@ import sys
 import requests
 import time
 
-sys.path.append(os.path.abspath('../../'))
-
+from daemo.client import DaemoClient
 CREDENTIALS_FILE = 'credentials.json'
 
 TOP_STORIES_URL = 'https://api.nytimes.com/svc/topstories/v2/home.json?api-key=%s'
@@ -20,8 +19,6 @@ PROJECT_ID = int(PROJECT_ID)
 
 class NYTClient:
     def __init__(self):
-        from daemo.client import Client
-
         print "Initializing NYT Client..."
 
         self.session = requests.session()

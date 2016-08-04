@@ -10,7 +10,7 @@ We recommend installing via ``pip``:
 
 .. code-block:: bash
 
-    $ pip install --upgrade daemo-api-client
+    $ pip install -U daemo-api-client
 
 You can also install from source:
 
@@ -20,17 +20,16 @@ You can also install from source:
     $ cd daemo-api-client
     $ python setup.py install
 
-Downloads
-^^^^^^^^^
-* `Most recent release tarball
-  <https://github.com/crowdresearch/daemo-api-client/tarball/master>`_
-* `Most recent release zipfile
-  <https://github.com/crowdresearch/daemo-api-client/zipball/master>`_
-* `Complete release list <https://github.com/crowdresearch/daemo-api-client/releases>`_
 
+:doc:`Step by Step Tutorial </step_by_step>`
 
 Examples
 --------
+* :doc:`Image Classification </source/examples/image_classify>`
+* :doc:`NY Times Emojified </source/examples/nyt_emoji>`
+* :doc:`Top 10 Professors in X discipline </source/examples/prof_rank>`
+* :doc:`Trumpify </source/examples/trumpify>`
+* :doc:`Trumpify (Peer Review) </source/examples/trumpify_review>`
 
 Documentation
 -------------
@@ -44,11 +43,21 @@ Documentation
     :hidden:
 
     source/daemo
+    source/examples
 
 
 Supported Python Versions
 -------------------------
 
-We support Python 2.7
+Python 2.7
+
+Downloads
+---------
+
+* `Most recent release tarball
+  <https://github.com/crowdresearch/daemo-api-client/tarball/master>`_
+* `Most recent release zipfile
+  <https://github.com/crowdresearch/daemo-api-client/zipball/master>`_
+* `Complete release list <https://github.com/crowdresearch/daemo-api-client/releases>`_
 
 
