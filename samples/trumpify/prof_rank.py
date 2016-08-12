@@ -1,4 +1,3 @@
-import logging
 import os
 import sys
 
@@ -11,31 +10,24 @@ CREDENTIALS_FILE = 'credentials.json'
 PROJECT_KEY = ''
 RERUN_KEY = ''
 
-
 daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
 
-def classify_images():
+def find_professors():
     """
-    Post images to Daemo server for classification
+    Post institute name and branch to Daemo server for finding top professor in that domain
     """
     daemo.publish(
         project_key=PROJECT_KEY,
         tasks=[
             {
-                "image_url": "http://cdn-media-2.lifehack.org/wp-content/files/2015/08/Your-Words-Affect-Your-Mind-10-Things-Happy-People-Say-Every-Day.jpg"},
-            {
-                "image_url": "http://i.dailymail.co.uk/i/pix/2014/06/20/1403279579539_wps_2_29_Mar_2013_Cape_Town_Sou.jpg"
+                "stream": "Computer Science",
+                "institute": "Stanford University"
             },
             {
-                "image_url": "http://media3.popsugar-assets.com/files/thumbor/YZygkdjNf5Vmn8snnQbKFg9dQKs/fit-in/2048xorig/filters:format_auto-!!-:strip_icc-!!-/2014/06/30/080/n/28443503/1c00786033691f2c_shutterstock_114882880/i/1-Most-people-SAD-women.jpg"
+                "stream": "Bioengineering",
+                "institute": "Stanford University"
             },
-            {
-                "image_url": "https://grainemediationblog.files.wordpress.com/2013/11/group-of-happy-people-2.jpg"
-            },
-            {
-                "image_url": "http://forums.steves-digicams.com/attachments/people-photos/132254d1229797858-sad-little-boy-advice-re-post-production-required-aaimg_3570.jpg"
-            }
         ],
         approve=approve_correct_response,
         completed=rate_workers
@@ -44,12 +36,12 @@ def classify_images():
 
 def get_response_text(worker_response):
     """
-    Filter out classification (True/False) from a worker's complete submission
+    Filter out professor name from worker's complete submission
 
     :param worker_response: submission made by a worker for a task
-    :return: actual tweet text
+    :return: professor name
     """
-    return worker_response.get('fields').get('is_happy')
+    return worker_response.get('fields').get('professor')
 
 
 def approve_correct_response(worker_responses):
@@ -81,21 +73,15 @@ def rate(worker_response):
     :param worker_response: submission made by a worker for a task
     """
     if worker_response is not None:
-        image_url = worker_response.get('task_data').get('image_url').lower()
         response = get_response_text(worker_response)
-
-        if 'happy' in image_url:
-            weight = 3 if response == 'Yes' else 1
-        else:
-            weight = 3 if response == 'No' else 1
 
         rating = {
             "task_id": worker_response.get("task_id"),
             "worker_id": worker_response.get("worker_id"),
-            "weight": weight
+            "weight": 3 if len(response)>0 else 1
         }
 
         daemo.rate(project_key=PROJECT_KEY, ratings=[rating])
 
 
-classify_images()
+find_professors()

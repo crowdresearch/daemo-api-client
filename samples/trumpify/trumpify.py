@@ -1,17 +1,17 @@
-import os
-import sys
 import logging
 import threading
 import time
+import sys
+import os
 
 sys.path.append(os.path.abspath('../../'))
 
-from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
+from samples.trumpify.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = ''
+PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -20,9 +20,6 @@ FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
-logger = logging.getLogger()
-logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
-logger.setLevel(logging.DEBUG)
 twitter = TwitterUtils()
 daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
@@ -58,7 +55,7 @@ def translate_to_trump_version(message):
     id = message.get('id')
 
     daemo.publish(
-        project_key=PROJECT_ID,
+        project_key=PROJECT_KEY,
         tasks=[{
             "id": id,
             "tweet": text
@@ -118,7 +115,7 @@ def rate_worker_responses(interval):
                 "weight": retweet_count
             }
 
-            daemo.rate(project_key=PROJECT_ID, ratings=[rating])
+            daemo.rate(project_key=PROJECT_KEY, ratings=[rating])
 
 
 thread = threading.Thread(target=transform_new_tweets,

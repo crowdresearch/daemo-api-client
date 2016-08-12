@@ -1,65 +1,98 @@
+import logging
 import os
 import sys
-
-import requests
 import time
 
+sys.path.append(os.path.abspath('../../'))
+
 from daemo.client import DaemoClient
+from samples.trumpify.utils import NYTUtils
+
 CREDENTIALS_FILE = 'credentials.json'
 
-TOP_STORIES_URL = 'https://api.nytimes.com/svc/topstories/v2/home.json?api-key=%s'
+PROJECT_KEY = ''
+RERUN_KEY = ''
 
-NYT_API_KEY = os.getenv('NYT_API_KEY', False)
-assert NYT_API_KEY, "Missing environ variable NYT_API_KEY"
-
-PROJECT_ID = os.getenv('PROJECT_ID', False)
-assert PROJECT_ID, "Missing environ variable PROJECT_ID"
-PROJECT_ID = int(PROJECT_ID)
+nyt = NYTUtils()
+daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
 
-class NYTClient:
-    def __init__(self):
-        print "Initializing NYT Client..."
+def transform_top_news(interval):
+    """
+    Fetches top news from New York Times after every "interval" seconds and posts them
+    to Daemo server for translation to Dr. Suess version
 
-        self.session = requests.session()
+    :param interval: period in seconds to repeat the process
+    """
+    while True:
+        messages = nyt.fetch_top_news()
 
-        self.client = Client(CREDENTIALS_FILE)
-        self.messages = []
+        if len(messages) > 0:
+            for message in messages:
+                translate_to_dr_suess_version(message)
+        else:
+            print "No top news released by NY Times recently"
 
-        while True:
-            self.fetch_top_news()
-            time.sleep(21600)  # check messages every 6 hrs
-
-    def fetch_top_news(self):
-        response = self.session.get(TOP_STORIES_URL % NYT_API_KEY)
-        response.raise_for_status()
-
-        messages = response.json()
-        self.messages = messages.get('results', [])
-
-        for message in reversed(self.messages):
-            self.process_message(message)
-
-    def process_message(self, message):
-        response = "FAIL"
-
-        if message.get('title', False) and message.get('url', False):
-            title = message.get('title')
-            url = message.get('url')
-
-            if len(title) > 10:
-                try:
-                    response = self.client.add_data(project_id=PROJECT_ID, data={"tasks": [{
-                        "title": title, "url": url
-                    }]})
-
-                    assert response is not None, "Failed to add data to project"
-                    response.raise_for_status()
-
-                    return "SUCCESS"
-                except Exception as e:
-                    print e.message
-        return response
+        time.sleep(interval*3600)
 
 
-nyt_client = NYTClient()
+def translate_to_dr_suess_version(item):
+    """
+    Create a Daemo task using "title" and "url" as data and pass it to workers for translation
+
+    :param message: news item to be used as data for daemo task
+    """
+    title = item.get('title')
+    url = item.get('url')
+
+    daemo.publish(
+        project_key=PROJECT_KEY,
+        tasks=[{
+            "title": title,
+            "url": url
+        }],
+        approve=approve_responses,
+        completed=show_approved_responses
+    )
+
+
+def get_suess_text(worker_response):
+    """
+    Filter out just the suess version from a worker's complete submission
+
+    :param worker_response: submission made by a worker for a task
+    :return: suess translated text
+    """
+    return worker_response.get('fields').get('suess_version')
+
+
+def approve_responses(worker_responses):
+    """
+    Verify each worker response if it meets the requirements
+
+    :param worker_responses: submission made by a worker for a task
+    :return: list of True/False
+    """
+    approvals = [get_suess_text(response) is not None and len(get_suess_text(response)) > 0 for response in
+                 worker_responses]
+    return approvals
+
+
+def show_approved_responses(worker_responses):
+    """
+    Rate an approved worker's response based on length of response
+
+    :param worker_responses: submission made by a worker for a task
+    """
+    for worker_response in worker_responses:
+        rating = {
+            "task_id": worker_response.get("task_id"),
+            "worker_id": worker_response.get("worker_id"),
+            "weight": 3 if get_suess_text(worker_response) is not None and len(
+                get_suess_text(worker_response)) > 0 else 1
+        }
+
+        daemo.rate(project_key=PROJECT_KEY, ratings=[rating])
+
+
+transform_top_news(12)
