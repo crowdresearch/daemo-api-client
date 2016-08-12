@@ -206,6 +206,15 @@ class DaemoClient:
         response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
         return response
 
+    def peer_review(self, worker_responses):
+        task_workers = [w['id'] for w in worker_responses]
+        data = {
+           "task_workers": task_workers
+        }
+
+        response = self._post("/api/task/peer-review/", data=json.dumps(data))
+        return response
+
     def _fetch_batch_config(self, rerun_key):
         data = self._fetch_batch(rerun_key)
 
@@ -600,6 +609,7 @@ class DaemoClient:
 
     def _publish_project(self, project_id):
         response = self._post("/api/project/%s/publish/" % project_id, data=json.dumps({}))
+
         response.raise_for_status()
 
         return response.json()
