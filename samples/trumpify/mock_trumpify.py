@@ -10,7 +10,7 @@ from daemo.client import DaemoClient
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = ''
+PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -54,7 +54,7 @@ def translate_to_trump_version(message):
     id = message.get('id')
 
     daemo.publish(
-        project_key=PROJECT_ID,
+        project_key=PROJECT_KEY,
         tasks=[{
             "id": id,
             "tweet": text
@@ -67,6 +67,7 @@ def translate_to_trump_version(message):
 
 def mock_workers(task, num_workers):
     """
+    Simulate workers responses to verify the workflow
 
     :param task: task object with all the fields and available choices
     :param num_workers: number of workers who will perform this task
@@ -103,7 +104,7 @@ def approve_tweet(worker_responses):
 
 def post_to_twitter(worker_responses):
     """
-    Post worker's response to twitter and add to monitoring list
+    Post worker's response to twitter
 
     :param worker_responses: submission made by a worker for a task
     """

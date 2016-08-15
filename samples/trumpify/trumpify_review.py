@@ -1,77 +1,103 @@
-import os
-import sys
 import threading
 import time
-
-from .twitter_client import TwitterClient
+import sys
+import os
 
 sys.path.append(os.path.abspath('../../'))
 
 from daemo.client import DaemoClient
+from samples.trumpify.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = ''
-REVIEW_PROJECT_ID = ''
-
-TW_CONSUMER_KEY = ''
-TW_CONSUMER_SECRET = ''
-TW_ACCESS_TOKEN = ''
-TW_ACCESS_TOKEN_SECRET = ''
+PROJECT_KEY = ''
+REVIEW_PROJECT_KEY = ''
+RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
-TIMESPAN_MIN = 5
+MINUTES = 60
+FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
+MONITOR_INTERVAL_MIN = 60
 
-twitter = TwitterClient(
-    consumer_key=TW_CONSUMER_KEY,
-    consumer_secret=TW_CONSUMER_SECRET,
-    token=TW_ACCESS_TOKEN,
-    token_secret=TW_ACCESS_TOKEN_SECRET
-)
-client = DaemoClient(CREDENTIALS_FILE)
+twitter = TwitterUtils()
+daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
 
-def fetch_new_tweets(count, interval):
+def transform_new_tweets(twitter_name, count, interval):
+    """
+    Fetches "count" number of tweets from twitter feed of "twitter_name" after every "interval" seconds and posts them
+    to Daemo server for translation
+
+    :param twitter_name: twitter account to fetch tweets from
+    :param count: number of tweets to fetch
+    :param interval: period in seconds to repeat the process
+    """
     while True:
-        messages = twitter.fetch_tweets(twitter_name=INPUT_TWITTER_NAME, count=count, interval=interval)
+        messages = twitter.fetch_tweets(twitter_name=twitter_name, count=count, interval=interval)
 
         if len(messages) > 0:
             for message in messages:
-                post_to_daemo(message)
+                translate_to_trump_version(message)
         else:
-            print "@%s has not tweeted in the last %d minutes." % (INPUT_TWITTER_NAME, interval)
+            print "@%s has not tweeted in the last %d minutes." % (twitter_name, int(interval / MINUTES))
 
-        time.sleep(interval * 60)
+        time.sleep(interval)
 
 
-def post_to_daemo(message):
+def translate_to_trump_version(message):
+    """
+    Create a Daemo task using "message" as data and pass it to workers for translation
+
+    :param message: tweet object to be used as data for daemo task
+    """
     text = message.get('text')
     id = message.get('id')
 
-    client.publish(project_key=PROJECT_ID, tasks=[{
-        "id": id,
-        "tweet": text
-    }], approve=approve_tweet, completed=create_review_task, stream=True)
+    daemo.publish(
+        project_key=PROJECT_KEY,
+        tasks=[{
+            "id": id,
+            "tweet": text
+        }],
+        approve=approve_tweet,
+        completed=create_review_task
+    )
 
 
-def approve_tweet(results):
-    approvals = []
-    for result in results:
-        text = result.get('results')[0].get('result')
-        is_approved = len(text) > 0
-        approvals.append(is_approved)
+def get_tweet_text(worker_response):
+    """
+    Filter out just the tweet text from a worker's complete submission
+
+    :param worker_response: submission made by a worker for a task
+    :return: actual tweet text
+    """
+    return worker_response.get('fields').get('tweet')
+
+
+def approve_tweet(worker_responses):
+    """
+    Verify each worker response if it meets the requirements
+
+    :param worker_responses: submission made by a worker for a task
+    :return: list of True/False
+    """
+    approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
     return approvals
 
 
-def create_review_task(results):
-    tasks = [{
-                 "id": result.get('results')[0].get('id'),
-                 "tweet_result": result.get('results')[0].get('result')
-             } for result in results]
+def create_review_task(worker_responses):
+    """
+    Create a task on Daemo server for reviewing worker submissions
 
-    client.publish(
-        project_key=REVIEW_PROJECT_ID,
+    :param worker_responses: submission made by a worker for a task
+    """
+    tasks = [{
+                 "tweet_result": get_tweet_text(worker_response)
+             } for worker_response in worker_responses]
+
+    daemo.publish(
+        project_key=REVIEW_PROJECT_KEY,
         tasks=tasks,
         approve=approve_review,
         completed=post_to_twitter,
@@ -79,28 +105,28 @@ def create_review_task(results):
     )
 
 
-def approve_review(results):
-    approvals = []
-    for result in results:
-        text = result.get('results')[0].get('result')
-        is_approved = len(text) > 0
-        approvals.append(is_approved)
+def approve_review(worker_responses):
+    """
+    Verify each worker response if it meets the requirements
+
+    :param worker_responses: submission made by a worker for a review task
+    :return: list of True/False
+    """
+    approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
     return approvals
 
 
-def post_to_twitter(results):
-    for result in results:
-        text = result.get('task_data').get('tweet_result')
+def post_to_twitter(approval_responses):
+    """
+    Post worker's response to twitter
+
+    :param worker_responses: submission made by a worker for a task
+    """
+    for approval_response in approval_responses:
+        text = approval_response.get('task_data').get('tweet_result')
         twitter.post(text)
 
 
-thread = threading.Thread(target=fetch_new_tweets, args=(TWEET_COUNT, TIMESPAN_MIN))
+thread = threading.Thread(target=transform_new_tweets,
+                          args=(INPUT_TWITTER_NAME, TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
 thread.start()
-
-client.publish(
-    project_key=PROJECT_ID,
-    tasks=[],
-    approve=approve_tweet,
-    completed=create_review_task,
-    stream=True
-)
