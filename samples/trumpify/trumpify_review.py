@@ -11,7 +11,6 @@ from samples.trumpify.utils import TwitterUtils
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_KEY = ''
-REVIEW_PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -61,7 +60,7 @@ def translate_to_trump_version(message):
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=create_review_task
+        completed=post_to_twitter
     )
 
 
@@ -74,7 +73,6 @@ def get_tweet_text(worker_response):
     """
     return worker_response.get('fields').get('tweet')
 
-
 def approve_tweet(worker_responses):
     """
     Verify each worker response if it meets the requirements
@@ -86,45 +84,18 @@ def approve_tweet(worker_responses):
     return approvals
 
 
-def create_review_task(worker_responses):
+def post_to_twitter(worker_responses):
     """
-    Create a task on Daemo server for reviewing worker submissions
+    Post worker response(s) to twitter and set up for peer review
 
     :param worker_responses: submission made by a worker for a task
     """
-    tasks = [{
-                 "tweet_result": get_tweet_text(worker_response)
-             } for worker_response in worker_responses]
 
-    daemo.publish(
-        project_key=REVIEW_PROJECT_KEY,
-        tasks=tasks,
-        approve=approve_review,
-        completed=post_to_twitter,
-        stream=True
-    )
-
-
-def approve_review(worker_responses):
-    """
-    Verify each worker response if it meets the requirements
-
-    :param worker_responses: submission made by a worker for a review task
-    :return: list of True/False
-    """
-    approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
-    return approvals
-
-
-def post_to_twitter(approval_responses):
-    """
-    Post worker's response to twitter
-
-    :param worker_responses: submission made by a worker for a task
-    """
-    for approval_response in approval_responses:
+    for approval_response in worker_responses:
         text = approval_response.get('task_data').get('tweet_result')
         twitter.post(text)
+
+    daemo.peer_review(worker_responses)
 
 
 thread = threading.Thread(target=transform_new_tweets,
