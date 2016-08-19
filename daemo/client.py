@@ -204,13 +204,25 @@ class DaemoClient:
         response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
         return response
 
-    def peer_review(self, worker_responses):
+    def peer_review(self, worker_responses, inter_task_review=False):
+        """
+
+        :param worker_responses: list of worker responses to the given task
+        :param inter_task_review: a boolean value that controls whether or not review matchups should be setup between
+        workers from different tasks. If true, matches can be setup between tasks. If false, all matchups will be
+        between workers of the current task.
+        :return: review response
+        """
+
         task_workers = [w['id'] for w in worker_responses]
         data = {
-           "task_workers": task_workers
+            "task_workers": task_workers,
+            "inter_task_review": inter_task_review
         }
 
         response = self._post("/api/task/peer-review/", data=json.dumps(data))
+
+
         return response
 
     def _fetch_batch_config(self, rerun_key):
@@ -294,6 +306,9 @@ class DaemoClient:
                         "payload": payload,
                         "isBinary": False
                     })
+
+    def _peer_review(self, match_group_id):
+        pass
 
     def _create_task(self, project_key, batch, data, approve, completed, stream, rerun_key):
         logging.debug(msg="creating tasks...")
@@ -761,6 +776,9 @@ class DaemoClient:
         }
 
         response = self._post(daemo.OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
+
+        with open("error.html", "w") as outfile:
+            outfile.write(response.text)
 
         if "error" in response.json():
             raise AuthException("Error refreshing access token. Please retry again.")
