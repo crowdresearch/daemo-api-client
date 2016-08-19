@@ -16,9 +16,6 @@ class ClientProtocol(WebSocketClientProtocol):
             Error.required("queue")
 
     def onMessage(self, payload, isBinary):
-        if not isBinary:
-            logging.debug("<: {}".format(payload.decode("utf8")))
-
         self.factory.queue.put({
             "payload": payload,
             "isBinary": isBinary
@@ -26,7 +23,7 @@ class ClientProtocol(WebSocketClientProtocol):
 
     def onSend(self, data):
         self.sendMessage(data.encode("utf8"))
-        logging.debug(">: {}".format(data))
+        logging.debug("<<<{}>>>".format(data))
 
     def onClose(self, wasClean, code, reason):
         logging.debug("### channel closed ###")
