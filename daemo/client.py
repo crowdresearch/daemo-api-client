@@ -237,7 +237,8 @@ class DaemoClient:
             "completed": completed,
             "stream": stream,
             "count": count,
-            "stats": {},
+            "status": {},
+            "submissions": {},
             "is_complete": False,
             "aggregated_data": []
         })
@@ -274,7 +275,10 @@ class DaemoClient:
 
         task_id = task["id"]
 
-        self.batches[batch_index]["stats"][task_id] = False
+        self.batches[batch_index]["status"][task_id] = False
+
+        if task_id not in self.batches[batch_index]["submissions"]:
+            self.batches[batch_index]["submissions"][task_id] = 0
 
         if task_id in self.tasks:
             self.tasks[task_id]["batches"].append(batch_index)
@@ -325,12 +329,21 @@ class DaemoClient:
             return fields[0]["id"]
         return -1
 
+    def _is_task_complete(self, batch_index, task_id):
+        task_status = self._fetch_task_status(task_id)
+
+        is_done = task_status["is_done"]
+        expected = int(task_status["expected"])
+
+        # compare result counts too
+        return is_done and expected == self.batches[batch_index]["submissions"][task_id]
+
     def _mark_task_completed(self, batch_index, task_id):
-        if task_id in self.batches[batch_index]["stats"]:
-            self.batches[batch_index]["stats"][task_id] = True
+        if task_id in self.batches[batch_index]["status"]:
+            self.batches[batch_index]["status"][task_id] = True
 
     def _is_batch_complete(self, batch_index):
-        return all(self.batches[batch_index]["stats"].values())
+        return all(self.batches[batch_index]["status"].values())
 
     def _mark_batch_completed(self, batch_index):
         self.batches[batch_index]["is_complete"] = True
@@ -457,6 +470,9 @@ class DaemoClient:
                     completed = config["completed"]
                     stream = config["stream"]
 
+                    # increment count to track completion
+                    self.batches[batch_index]["submissions"][task_id] += 1
+
                     if stream:
                         self._stream_response(batch_index, task_id, task_data, approve, completed)
                     else:
@@ -488,7 +504,7 @@ class DaemoClient:
             logging.debug(msg="calling completed callback")
             completed([task_data])
 
-        is_done = self._fetch_task_status(task_id)
+        is_done = self._is_task_complete(batch_index, task_id)
         logging.debug(msg="is task %d done? %s" % (task_id, is_done))
 
         if is_done:
@@ -500,7 +516,7 @@ class DaemoClient:
         # store it for aggregation (stream = False)
         self._aggregate(batch_index, task_id, task_data)
 
-        is_done = self._fetch_task_status(task_id)
+        is_done = self._is_task_complete(batch_index, task_id)
         logging.debug(msg="is task %d done? %s" % (task_id, is_done))
 
         if is_done:
@@ -511,7 +527,7 @@ class DaemoClient:
         if is_done:
             self._mark_batch_completed(batch_index)
 
-            logging.debug(msg="is batch done? yes")
+            logging.debug(msg="is batch done? True")
             tasks_data = self._get_aggregated(batch_index)
 
             logging.debug(msg="calling approved callback...")
@@ -528,7 +544,7 @@ class DaemoClient:
             logging.debug(msg="calling completed callback...")
             completed(approved_tasks)
         else:
-            logging.debug(msg="is batch done? no")
+            logging.debug(msg="is batch done? False")
 
     # Backend API ======================================================================================================
 
@@ -585,10 +601,6 @@ class DaemoClient:
 
     def _publish_project(self, project_id):
         response = self._post("/api/project/%s/publish/" % project_id, data=json.dumps({}))
-
-        with open("error.html", "w") as outfile:
-            outfile.write(response.text)
-
         response.raise_for_status()
 
         return response.json()
@@ -644,8 +656,7 @@ class DaemoClient:
         response.raise_for_status()
 
         task_data = response.json()
-        is_done = task_data.get("is_done")
-        return is_done
+        return task_data
 
     def _submit_results(self, task_id, results):
         data = {
