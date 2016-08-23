@@ -455,7 +455,7 @@ class DaemoClient:
                 if taskworker is None:
                     task_data = self._get_task_results_by_taskworker_id(taskworker_id)
                 else:
-                    task_data = self._tranform_task_results(taskworker)
+                    task_data = self._transform_task_results(taskworker)
 
                 for batch_index in batch_indices:
                     assert batch_index < len(self.batches) \
@@ -627,12 +627,12 @@ class DaemoClient:
             response.raise_for_status()
             results = response.json()
 
-            return self._tranform_task_results(results)
+            return self._transform_task_results(results)
         except Exception as e:
             print e.message
             return None
 
-    def _tranform_task_results(self, data):
+    def _transform_task_results(self, data):
         fields = {}
         for result in data.get("results"):
             fields[result["key"]] = result["result"]
