@@ -200,15 +200,12 @@ class DaemoClient:
     def peer_review(self, worker_responses, review_completed, inter_task_review=False):
         """
         :param worker_responses: list of worker responses to the given task
+        :param review_completed: callback that is called once all worker scores are updated by review matchups
         :param inter_task_review: a boolean value that controls whether or not review matchups should be setup between
         workers from different tasks. If true, matches can be setup between tasks. If false, all matchups will be
         between workers of the current task.
         :return: review response
         """
-        task_workers = [w['id'] for w in worker_responses]
-        data = {
-            "task_workers": task_workers
-        }
 
         if not callable(review_completed):
             pass
@@ -218,9 +215,20 @@ class DaemoClient:
             kwargs=dict(
                 worker_responses=worker_responses,
                 inter_task_review=inter_task_review,
-                callback=review_completed
-            ))
+                review_completed=review_completed
+            )
+        )
         thread.start()
+
+    def peer_review_and_rate(self, worker_responses, inter_task_review=False):
+        thread = threading.Thread(
+            target=self._peer_review,
+            kwargs=dict(
+                worker_responses=worker_responses,
+                inter_task_review=inter_task_review,
+                review_completed=None
+            )
+        )
 
     def _publish(self, project_key, tasks, approve, completed, stream, mock_workers, rerun_key):
         # change status of project to published if not already set
@@ -314,7 +322,7 @@ class DaemoClient:
                 "task_id": task_id,
             }
 
-    def _peer_review(self, worker_responses, callback, inter_task_review=False):
+    def _peer_review(self, worker_responses, review_completed, inter_task_review=False):
         task_workers = [w['id'] for w in worker_responses]
         data = {
             "task_workers": task_workers,
@@ -322,10 +330,9 @@ class DaemoClient:
         }
 
         response = self._post("/api/task/peer-review/", data=json.dumps(data))
-        match_group_id = response.json()['match_group_id']
-        self.cache.append({
-            match_group_id: callback
-        })
+        if review_completed is not None:
+            match_group_id = response.json()['match_group_id']
+            self.cache[match_group_id] = review_completed
 
     def _mock_task(self, task_id, mock_workers):
         logging.debug(msg="mocking workers...")
@@ -370,7 +377,6 @@ class DaemoClient:
 
     def _is_task_complete(self, batch_index, task_id):
         task_status = self._fetch_task_status(task_id)
-
         is_done = task_status["is_done"]
         expected = int(task_status["expected"])
 
@@ -479,13 +485,15 @@ class DaemoClient:
             response = json.loads(payload.decode("utf8"))
 
             type = response.get("type", "REGULAR")
-            if type == "REVIEW":
-                self._process_review_message(response)
+            payload = response.get('payload')
 
-            taskworker_id = int(response.get("taskworker_id", 0))
-            task_id = int(response.get("task_id", 0))
-            project_key = response.get("project_key", None)
-            taskworker = response.get("taskworker", None)
+            if type == "REVIEW":
+                return self._process_review_message(payload)
+
+            taskworker_id = int(payload.get("taskworker_id", 0))
+            task_id = int(payload.get("task_id", 0))
+            project_key = payload.get("project_key", None)
+            taskworker = payload.get("taskworker", None)
 
             # ignore data pushed via GUI (has no batch info)
             if task_id in self.tasks:
@@ -523,22 +531,28 @@ class DaemoClient:
 
                     if self._all_batches_complete():
                         logging.debug(msg="are all batches done? yes")
-                        self._stop()
+                        # self._stop()
                     else:
                         logging.debug("are all batches done? no")
             else:
                 logging.debug("No corresponding task found. Message ignored.")
 
-    def _process_review_message(self, response):
-        is_done = response.get("is_done")
-        if is_done:
-            match_group_id = response.get("match_group_id")
+    def _process_review_message(self, payload):
+        project_key = payload.get('project_key')
+        if payload['is_done']:
+            match_group_id = payload["match_group_id"]
             callback = self.cache[match_group_id]
+            ratings = self._get_trueskill_scores(match_group_id)
             if callback is not None:
-                scores = response.get("scores")
-                callback(scores)
+                callback(ratings)
+            else:
+                self.rate(project_key, ratings)
 
+    def _get_trueskill_scores(self, match_group_id):
+        response = self._get("/api/worker-requester-rating/trueskill/?match_group_id={}".format(match_group_id))
+        response.raise_for_status()
 
+        return response.json()
 
     def _stream_response(self, batch_index, task_id, task_data, approve, completed):
         logging.debug(msg="streaming responses...")
@@ -786,7 +800,7 @@ class DaemoClient:
 
     # REST API =========================================================================================================
 
-    def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
+    def _get(self, relative_url, data=None, headers=None, is_json=True, authorization=True):
         if headers is None:
             headers = dict()
 
@@ -800,7 +814,9 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
+        print "Calling rest"
         response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+        print "Response:", response
 
         if self._is_auth_error(response):
             self._refresh_token()
