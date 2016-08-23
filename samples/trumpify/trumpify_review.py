@@ -1,7 +1,7 @@
+import os
+import sys
 import threading
 import time
-import sys
-import os
 
 sys.path.append(os.path.abspath('../../'))
 
@@ -11,6 +11,7 @@ from samples.trumpify.utils import TwitterUtils
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_KEY = ''
+REVIEW_PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -60,18 +61,40 @@ def translate_to_trump_version(message):
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=post_to_twitter
+        completed=create_review_task,
+        stream=True
     )
 
 
-def get_tweet_text(worker_response):
+def get_tweet(worker_response):
+    """
+    Filter out just the tweet text from task data
+
+    :param worker_response: submission made by a worker for a task
+    :return: actual tweet input
+    """
+    return worker_response.get('task_data').get('tweet')
+
+
+def get_tweet_response(worker_response):
     """
     Filter out just the tweet text from a worker's complete submission
 
     :param worker_response: submission made by a worker for a task
     :return: actual tweet text
     """
-    return worker_response.get('fields').get('tweet')
+    return worker_response.get('fields').get('tweet_result')
+
+
+def get_tweet_rating(worker_response):
+    """
+    Filter out just the tweet rating from peer review
+
+    :param worker_response: submission made by a worker for a task
+    :return: actual tweet text
+    """
+    return int(worker_response.get('fields').get('rating')[0])
+
 
 def approve_tweet(worker_responses):
     """
@@ -80,22 +103,52 @@ def approve_tweet(worker_responses):
     :param worker_responses: submission made by a worker for a task
     :return: list of True/False
     """
-    approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
+    approvals = [len(get_tweet_response(response)) > 0 for response in worker_responses]
     return approvals
 
 
-def post_to_twitter(worker_responses):
+def create_review_task(worker_responses):
     """
-    Post worker response(s) to twitter and set up for peer review
+    Create a task on Daemo server for reviewing worker submissions
 
     :param worker_responses: submission made by a worker for a task
     """
+    tasks = [{
+                 "tweet": get_tweet(worker_response),
+                 "tweet_result": get_tweet_response(worker_response)
+             } for worker_response in worker_responses]
 
-    for approval_response in worker_responses:
-        text = approval_response.get('task_data').get('tweet_result')
+    daemo.publish(
+        project_key=REVIEW_PROJECT_KEY,
+        tasks=tasks,
+        approve=approve_review,
+        completed=post_to_twitter
+    )
+
+
+def approve_review(worker_responses):
+    """
+    Verify each worker response if it meets the requirements
+
+    :param worker_responses: submission made by a worker for a review task
+    :return: list of True/False
+    """
+    approvals = [get_tweet_rating(response) > 0 for response in worker_responses]
+    return approvals
+
+
+def post_to_twitter(approved_responses):
+    """
+    Post worker's response to twitter
+
+    :param worker_responses: submission made by a worker for a task
+    """
+    ratings = [get_tweet_rating(response) for response in approved_responses]
+    avg_rating = reduce(lambda x, y: x + y, ratings) / len(ratings)
+    text = approved_responses[0].get('task_data').get('tweet_result')
+
+    if avg_rating > 4:
         twitter.post(text)
-
-    daemo.peer_review(worker_responses)
 
 
 thread = threading.Thread(target=transform_new_tweets,
