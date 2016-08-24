@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import time
+from __future__ import division
 
 sys.path.append(os.path.abspath('../../'))
 
