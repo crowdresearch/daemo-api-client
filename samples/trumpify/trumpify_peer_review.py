@@ -19,14 +19,6 @@ FETCH_INTERVAL_MIN = 5
 TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
-import logging
-logger = logging.getLogger()
-logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
-logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('log.txt')
-fh.setLevel(logging.DEBUG)
-logger.addHandler(fh)
-
 twitter = TwitterUtils()
 daemo = DaemoClient(credentials_path=CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
@@ -81,6 +73,7 @@ def get_tweet_text(worker_response):
     """
     return worker_response.get('fields').get('tweet')
 
+
 def approve_tweet(worker_responses):
     """
     Verify each worker response if it meets the requirements
@@ -90,10 +83,6 @@ def approve_tweet(worker_responses):
     """
     approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
     return approvals
-
-
-def review_completed(ratings):
-    daemo.rate(PROJECT_KEY, ratings)
 
 
 def post_to_twitter(worker_responses):
@@ -109,6 +98,21 @@ def post_to_twitter(worker_responses):
 
     daemo.peer_review(worker_responses, review_completed=review_completed)
 
+
+def review_completed(ratings):
+    """
+    Callback that stores newest ratings
+
+    :param ratings: list object which provides ratings for one or more worker responses.
+    rating = {
+        "task_id": unique ID for the task (is available from the worker response),
+        "worker_id": unique ID for the worker (is available from the worker response),
+        "weight": rating value (can be integer or float)
+    }
+
+    ratings = [rating]
+    """
+    daemo.rate(PROJECT_KEY, ratings, ignore_history=True)
 
 thread = threading.Thread(target=transform_new_tweets,
                           args=(INPUT_TWITTER_NAME, TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))
