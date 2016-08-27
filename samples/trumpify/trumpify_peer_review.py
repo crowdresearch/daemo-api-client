@@ -1,12 +1,12 @@
-import os
-import sys
 import threading
 import time
+import sys
+import os
 
 sys.path.append(os.path.abspath('../../'))
 
-from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
+from samples.trumpify.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
@@ -20,7 +20,7 @@ TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
 twitter = TwitterUtils()
-daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+daemo = DaemoClient(credentials_path=CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
 
 def transform_new_tweets(twitter_name, count, interval):
@@ -60,25 +60,8 @@ def translate_to_trump_version(message):
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=post_to_twitter,
-        mock_workers=mock_workers
+        completed=post_to_twitter
     )
-
-
-def mock_workers(task, num_workers):
-    """
-    Simulate workers responses to verify the workflow
-
-    :param task: task object with all the fields and available choices
-    :param num_workers: number of workers who will perform this task
-    :return: task_result object which provides key-value map for each field and the result
-    """
-    results = [
-        [{
-            "name": "tweet",
-            "value": "%d. Trump Trump everywhere not a Hillary to see." % x
-        }] for x in range(num_workers)]
-    return results
 
 
 def get_tweet_text(worker_response):
@@ -104,13 +87,32 @@ def approve_tweet(worker_responses):
 
 def post_to_twitter(worker_responses):
     """
-    Post worker's response to twitter
+    Post worker response(s) to twitter and set up for peer review
 
     :param worker_responses: submission made by a worker for a task
     """
-    for worker_response in worker_responses:
-        print get_tweet_text(worker_response)
 
+    for approval_response in worker_responses:
+        text = approval_response.get('task_data').get('tweet_result')
+        twitter.post(text)
+
+    daemo.peer_review(worker_responses, review_completed=review_completed)
+
+
+def review_completed(ratings):
+    """
+    Callback that stores newest ratings
+
+    :param ratings: list object which provides ratings for one or more worker responses.
+    rating = {
+        "task_id": unique ID for the task (is available from the worker response),
+        "worker_id": unique ID for the worker (is available from the worker response),
+        "weight": rating value (can be integer or float)
+    }
+
+    ratings = [rating]
+    """
+    daemo.rate(PROJECT_KEY, ratings, ignore_history=True)
 
 thread = threading.Thread(target=transform_new_tweets,
                           args=(INPUT_TWITTER_NAME, TWEET_COUNT, FETCH_INTERVAL_MIN * MINUTES))

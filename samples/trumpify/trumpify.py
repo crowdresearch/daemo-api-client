@@ -1,16 +1,17 @@
-import os
-import sys
+import logging
 import threading
 import time
+import sys
+import os
 
 sys.path.append(os.path.abspath('../../'))
 
-from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
+from samples.trumpify.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = ''
+PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -54,7 +55,7 @@ def translate_to_trump_version(message):
     id = message.get('id')
 
     daemo.publish(
-        project_key=PROJECT_ID,
+        project_key=PROJECT_KEY,
         tasks=[{
             "id": id,
             "tweet": text
@@ -114,7 +115,7 @@ def rate_worker_responses(interval):
                 "weight": retweet_count
             }
 
-            daemo.update_rating(project_key=PROJECT_ID, ratings=[rating])
+            daemo.rate(project_key=PROJECT_KEY, ratings=[rating])
 
 
 thread = threading.Thread(target=transform_new_tweets,
