@@ -2,11 +2,10 @@ import os
 import sys
 import threading
 import time
-
-sys.path.append(os.path.abspath('../../'))
+from __future__ import division
 
 from daemo.client import DaemoClient
-from samples.trumpify.utils import TwitterUtils
+from samples.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
@@ -141,10 +140,10 @@ def post_to_twitter(approved_responses):
     """
     Post worker's response to twitter
 
-    :param worker_responses: submission made by a worker for a task
+    :param approved_responses: submission made by a worker for a task
     """
     ratings = [get_tweet_rating(response) for response in approved_responses]
-    avg_rating = reduce(lambda x, y: x + y, ratings) / len(ratings)
+    avg_rating = float(reduce(lambda x, y: x + y, ratings)) / len(ratings)
     text = approved_responses[0].get('task_data').get('tweet_result')
 
     if avg_rating > 4:

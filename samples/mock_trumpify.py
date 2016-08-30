@@ -1,12 +1,8 @@
-import os
-import sys
 import threading
 import time
 
-sys.path.append(os.path.abspath('../../'))
-
-from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
+from samples.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 

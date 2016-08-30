@@ -1,10 +1,15 @@
-=================================================
-Daemo Project Authoring Interface and API Scripts
-=================================================
+.. _examples:
 
-In this tutorial, we will learn how to use Daemo Crowdsourcing Platform to create a task to classify images and write a script to monitor task submissions and rate workers.
+Step-by-step tutorial
+#####################
 
-<<explain project more>>
+The `samples directory </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/>`_ in
+the Daemo API Client contains many examples to get you started, but here's
+a full tutorial that gives you an overview of the features.
+
+In this tutorial, we will learn how to use Daemo Crowdsourcing Platform to create a project to classify images and write a script to monitor task submissions and rate workers.
+
+Imagine we are building an AI based image processing system to identify few animals like cat, dog and horse for which we have a repository of images which need to be correctly labelled for supervised training of the learning model. We will use Daemo to create this dataset of image links and associated labels which can be fed to the system.
 
 We will have distinct goals as mentioned below:
 
@@ -20,10 +25,15 @@ Daemo Platform
 ................
 Daemo API Client
 ................
-1. Create an API script to launch project
-2. Build a workflow to approve workers' submissions
-3. Manage rating for the workers
+1. Installation
+2. Create an API script to launch project
+3. Build a workflow to approve workers' submissions
+4. Manage rating for the workers
 
+
+..............
+Daemo Platform
+..............
 
 Create a new project
 --------------------
@@ -88,10 +98,74 @@ Project Launch and API Instructions
 -----------------------------------
 .. image:: images/aws-instructions.png
 
-Once it is submitted, a new form appears with instructions. Please follow the instructions to fill in the AWS keys from Mechanical Turk. All the project tasks created will be posted to Mehcanical Turk, so platform will need access to the keys to interact on your behalf with MTurk.
+Once it is submitted, a new form appears with instructions. Please follow the instructions to fill in the AWS keys from Mechanical Turk. All the project tasks created will be posted to Mechanical Turk, so platform will need access to the keys to interact on your behalf with MTurk.
 
 - From here, we can download the credentials ```credentials.json``` and the starter API script ```daemo.py``` to interact with the project we created.
 
 Now the project is all set to be launched via API script.
+
+
+................
+Daemo API Client
+................
+
+Installation
+------------
+
+Daemo API Client is tested on Mac OS X and Linux with the latest Python 2.7.
+To run a daemo client, you will need **python** and **virtualenv**.
+
+On Debian-based systems::
+
+    $ sudo apt-get install python-dev python-virtualenv
+
+Create a virtualenv and install *daemo-api-client* in it ::
+
+    $ virtualenv daemo
+    $ pip install daemo-api-client
+
+
+Create an API script to launch project
+--------------------------------------
+We already have a basic script ready in ```daemo.py``` where we need to update task input data and different callbacks which will be triggered at different stages.
+
+Once we open the script in editor, we can see that input data has a specific structure
+```
+task_data = [
+    {
+        "image_url": "value"
+    }
+]
+```
+
+"value" part needs to be replaced with the URL of the image. We can add as many records by duplicating one task and updating value to look like
+
+```task_data = [
+    {
+        "image_url": "value"
+    }
+    {
+        "image_url": "value"
+    }
+]```
+
+With this, we have input data in place to launch tasks. But first we need to complete the callbacks.
+
+Build a workflow to approve workers' submissions
+------------------------------------------------
+With the project launch, each task we mention in the input data will be submitted to the platform for N number of workers (Workers per task).
+Once all tasks have a worker response, ```approve``` function in the script will be triggered. Therefore, we need to complete this function first.
+
+This function as per API docs (link here) is used to approve worker submissions to release payment. We will write a basic procedure to assess if worker did the right job and approve his/her submission by passing a boolean value for each worker submission as a response.
+
+Check the full script at `Image Classification </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
+
+Manage rating for the workers
+-----------------------------
+After workers' submissions are approved, ```completed``` callback will be triggered with only approved worker responses. We need to rate workers at this stage which gets fed up to the Daemo platform to improve the ongoing quality of responses as you launch more tasks.
+For a simple rating function, check the full script at ```image_classify.py```
+
+To learn more about API client, check the docs at API_Documentation_.
+.. _API_Documentation: http://daemo-api-client.readthedocs.io/en/latest/source/daemo.client.html
 
 

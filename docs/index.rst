@@ -21,15 +21,16 @@ You can also install from source:
     $ python setup.py install
 
 
-:doc:`Step by Step Tutorial </step_by_step>`
+:doc:`Step by Step Tutorial </source/step_by_step>`
 
 Examples
 --------
-* :doc:`Image Classification </source/examples/image_classify>`
-* :doc:`NY Times Emojified </source/examples/nyt_emoji>`
-* :doc:`Top 10 Professors in X discipline </source/examples/prof_rank>`
-* :doc:`Trumpify </source/examples/trumpify>`
-* :doc:`Trumpify (Peer Review) </source/examples/trumpify_review>`
+* :doc:`Image Classification </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`
+* :doc:`NY Times Emojified </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/nyt_emoji.py>`
+* :doc:`Top 10 Professors in X discipline </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/prof_rank.py>`
+* :doc:`Trumpify </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify.py>`
+* :doc:`Trumpify (Peer Review) </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify_review.py>`
+* :doc:`Mock Trumpify </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/mock_trumpify.py>`
 
 Documentation
 -------------

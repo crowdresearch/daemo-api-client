@@ -1,12 +1,7 @@
-import logging
-import os
-import sys
 import time
 
-sys.path.append(os.path.abspath('../../'))
-
 from daemo.client import DaemoClient
-from samples.trumpify.utils import NYTUtils
+from samples.utils import NYTUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
@@ -33,7 +28,7 @@ def transform_top_news(interval):
         else:
             print "No top news released by NY Times recently"
 
-        time.sleep(interval*3600)
+        time.sleep(interval * 3600)
 
 
 def translate_to_dr_suess_version(item):

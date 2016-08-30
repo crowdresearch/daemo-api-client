@@ -1,13 +1,8 @@
-import logging
 import threading
 import time
-import sys
-import os
-
-sys.path.append(os.path.abspath('../../'))
 
 from daemo.client import DaemoClient
-from samples.trumpify.utils import TwitterUtils
+from samples.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
@@ -61,7 +56,7 @@ def translate_to_trump_version(message):
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=post_to_twitter
+        completed=post_to_twitter, stream=True
     )
 
 

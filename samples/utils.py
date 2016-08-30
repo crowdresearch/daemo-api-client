@@ -18,8 +18,8 @@ TW_ACCESS_TOKEN_SECRET = ''
 
 
 class NYTUtils:
-    client=None
-    news_items=Queue()
+    client = None
+    news_items = Queue()
 
     def __init__(self):
         self.client = requests.session()
