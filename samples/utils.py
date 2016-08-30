@@ -3,14 +3,36 @@ from Queue import Queue
 from datetime import datetime
 from email._parseaddr import mktime_tz, parsedate_tz
 
+import requests
 from twitter import *
 
 from daemo.errors import Error
+
+TOP_STORIES_URL = 'https://api.nytimes.com/svc/topstories/v2/home.json?api-key=%s'
+NYT_API_KEY = ''
 
 TW_CONSUMER_KEY = ''
 TW_CONSUMER_SECRET = ''
 TW_ACCESS_TOKEN = ''
 TW_ACCESS_TOKEN_SECRET = ''
+
+
+class NYTUtils:
+    client = None
+    news_items = Queue()
+
+    def __init__(self):
+        self.client = requests.session()
+
+    def fetch_top_news(self):
+        response = self.client.get(TOP_STORIES_URL % NYT_API_KEY)
+        response.raise_for_status()
+
+        data = response.json()
+        messages = data.get('results', [])
+
+        for message in reversed(messages):
+            self.news_items.put(message)
 
 
 class TwitterUtils:

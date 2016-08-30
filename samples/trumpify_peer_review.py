@@ -1,16 +1,13 @@
-import os
-import sys
 import threading
 import time
 
-sys.path.append(os.path.abspath('../../'))
-
-from samples.trumpify.utils import TwitterUtils
 from daemo.client import DaemoClient
+from samples.utils import TwitterUtils
 
 CREDENTIALS_FILE = 'credentials.json'
 
-PROJECT_ID = ''
+PROJECT_KEY = ''
+REVIEW_PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
@@ -54,40 +51,45 @@ def translate_to_trump_version(message):
     id = message.get('id')
 
     daemo.publish(
-        project_key=PROJECT_ID,
+        project_key=PROJECT_KEY,
         tasks=[{
             "id": id,
             "tweet": text
         }],
         approve=approve_tweet,
-        completed=post_to_twitter,
-        mock_workers=mock_workers
+        completed=create_review_task,
+        stream=True
     )
 
 
-def mock_workers(task, num_workers):
+def get_tweet(worker_response):
     """
+    Filter out just the tweet text from task data
 
-    :param task: task object with all the fields and available choices
-    :param num_workers: number of workers who will perform this task
-    :return: task_result object which provides key-value map for each field and the result
+    :param worker_response: submission made by a worker for a task
+    :return: actual tweet input
     """
-    results = [
-        [{
-            "name": "tweet",
-            "value": "%d. Trump Trump everywhere not a Hillary to see." % x
-        }] for x in range(num_workers)]
-    return results
+    return worker_response.get('task_data').get('tweet')
 
 
-def get_tweet_text(worker_response):
+def get_tweet_response(worker_response):
     """
     Filter out just the tweet text from a worker's complete submission
 
     :param worker_response: submission made by a worker for a task
     :return: actual tweet text
     """
-    return worker_response.get('fields').get('tweet')
+    return worker_response.get('fields').get('tweet_result')
+
+
+def get_tweet_rating(worker_response):
+    """
+    Filter out just the tweet rating from peer review
+
+    :param worker_response: submission made by a worker for a task
+    :return: actual tweet text
+    """
+    return int(worker_response.get('fields').get('rating')[0])
 
 
 def approve_tweet(worker_responses):
@@ -97,18 +99,26 @@ def approve_tweet(worker_responses):
     :param worker_responses: submission made by a worker for a task
     :return: list of True/False
     """
-    approvals = [len(get_tweet_text(response)) > 0 for response in worker_responses]
+    approvals = [len(get_tweet_response(response)) > 0 for response in worker_responses]
     return approvals
 
 
-def post_to_twitter(worker_responses):
+def create_review_task(worker_responses):
     """
-    Post worker's response to twitter and add to monitoring list
+    Create a task on Daemo server for reviewing worker submissions
 
     :param worker_responses: submission made by a worker for a task
     """
-    for worker_response in worker_responses:
-        print get_tweet_text(worker_response)
+    daemo.peer_review(worker_responses, review_completed=rate_workers)
+
+
+def rate_workers(ratings):
+    """
+    Update workers's ratings based on peer feedback ratings
+
+    :param ratings: ratings from peer feedback for submissions made by workers for each task
+    """
+    daemo.rate(PROJECT_KEY, ratings, ignore_history=True)
 
 
 thread = threading.Thread(target=transform_new_tweets,
