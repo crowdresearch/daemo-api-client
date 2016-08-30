@@ -69,6 +69,7 @@ class DaemoClient:
 
         self.batches = []
         self.tasks = {}
+        self.cache = {}
 
         self.queue = multiprocessing.Queue()
 
@@ -154,7 +155,7 @@ class DaemoClient:
         )
         thread.start()
 
-    def rate(self, project_key, ratings):
+    def rate(self, project_key, ratings, ignore_history=False):
         """
         Rate a worker submission
 
@@ -169,17 +170,72 @@ class DaemoClient:
             }
 
             ratings = [rating]
+        :param ignore_history: boolean value that determines whether historical ratings should be considered for updating this new rating.
+        If true, a worker's score will be set to the score that is provided to rate.
+        If peer review is being used, this value should be set to True.
 
         :return: rating response
         """
         logging.debug(msg="rate function called")
         data = {
             "project_id": project_key,
-            "ratings": ratings
+            "ratings": ratings,
+            "ignore_history": ignore_history
         }
 
         response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
         return response
+
+    def peer_review(self, worker_responses, review_completed, inter_task_review=False):
+        """
+        Performs peer review for all the worker responses and when all ratings from peer feedback are received, review_completed callback is triggered.
+
+        :param worker_responses: list of worker responses to the given task
+        :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
+        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
+        If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity
+        If False, it only allows peer feedback among workers for the same task they completed
+
+        :return: review response
+        """
+
+        if not callable(review_completed):
+            pass
+
+        thread = threading.Thread(
+            target=self._peer_review,
+            kwargs=dict(
+                worker_responses=worker_responses,
+                inter_task_review=inter_task_review,
+                review_completed=review_completed,
+                project_key=None
+            )
+        )
+        thread.start()
+
+    def peer_review_and_rate(self, worker_responses, project_key, inter_task_review=False):
+        """
+        Performs peer review for all the worker responses and when all ratings from peer feedback are received, these ratings are fed back to the platform to update worker ratings.
+
+        :param worker_responses: list of worker responses to the given task
+        :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
+        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
+        If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity
+        If False, it only allows peer feedback among workers for the same task they completed
+
+        :return: review response
+        """
+
+        thread = threading.Thread(
+            target=self._peer_review,
+            kwargs=dict(
+                worker_responses=worker_responses,
+                inter_task_review=inter_task_review,
+                review_completed=None,
+                project_key=project_key
+            )
+        )
+        thread.start()
 
     def _initialize(self):
         if self._credentials_exist():
@@ -315,6 +371,18 @@ class DaemoClient:
                 results
             )
 
+    def _peer_review(self, worker_responses, review_completed, project_key, inter_task_review=False):
+        task_workers = [response['id'] for response in worker_responses]
+
+        response = self._launch_peer_review(task_workers, inter_task_review)
+
+        if review_completed is not None:
+            match_group_id = response['match_group_id']
+            self.cache[match_group_id] = review_completed
+
+        if project_key is not None:
+            self.cache['project_key'] = project_key
+
     def _get_template_item_id(self, template_item_name, template_items):
         """
         Find template item by name from list of template items in a task
@@ -439,10 +507,16 @@ class DaemoClient:
         if not isBinary:
             response = json.loads(payload.decode("utf8"))
 
-            taskworker_id = int(response.get("taskworker_id", 0))
-            task_id = int(response.get("task_id", 0))
-            project_key = response.get("project_key", None)
-            taskworker = response.get("taskworker", None)
+            type = response.get("type", "REGULAR")
+            payload = response.get('payload')
+
+            if type == "REVIEW":
+                return self._process_review_message(payload)
+
+            taskworker_id = int(payload.get("taskworker_id", 0))
+            task_id = int(payload.get("task_id", 0))
+            project_key = payload.get("project_key", None)
+            taskworker = payload.get("taskworker", None)
 
             # ignore data pushed via GUI (has no batch info)
             if task_id in self.tasks:
@@ -485,6 +559,18 @@ class DaemoClient:
                         logging.debug("are all batches done? no")
             else:
                 logging.debug("No corresponding task found. Message ignored.")
+
+    def _process_review_message(self, payload):
+        if payload['is_done']:
+            match_group_id = payload["match_group_id"]
+            ratings = self._get_trueskill_scores(match_group_id)
+
+            if 'project_key' in self.cache:
+                project_key = self.cache['project_key']
+                self.rate(project_key, ratings, ignore_history=True)
+            elif match_group_id in self.cache:
+                callback = self.cache[match_group_id]
+                callback(ratings)
 
     def _stream_response(self, batch_index, task_id, task_data, approve, completed):
         logging.debug(msg="streaming responses...")
@@ -666,6 +752,22 @@ class DaemoClient:
 
         response = self._post("/api/task-worker-result/mock-results/", data=json.dumps(data))
         response.raise_for_status()
+        return response.json()
+
+    def _launch_peer_review(self, task_workers, inter_task_review):
+        data = {
+            "task_workers": task_workers,
+            "inter_task_review": inter_task_review
+        }
+
+        response = self._post("/api/task/peer-review/", data=json.dumps(data))
+        response.raise_for_status()
+        return response.json()
+
+    def _get_trueskill_scores(self, match_group_id):
+        response = self._get("/api/worker-requester-rating/trueskill/?match_group_id={}".format(match_group_id))
+        response.raise_for_status()
+
         return response.json()
 
     # Authentication ===================================================================================================
