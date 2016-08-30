@@ -47,14 +47,22 @@ class DaemoClient:
         daemo = DaemoClient(credentials_path=CREDENTIALS_FILE, rerun_key=RERUN_KEY)
 
     :param credentials_path: path of the daemo credentials file which can be downloaded from daemo user profile (**Menu** >> **Get Credentials**)
-    :param host: daemo server to connect to - uses a default server if not defined
     :param rerun_key: a string used to differentiate each script run. If this key is same, it replays the last results from worker responses and brings you to the last point when script stopped execution.
     :param multi_threading: False by default, bool value to enable multi-threaded response handling
+    :param host: daemo server to connect to - uses a default server if not defined
+    :param is_secure: boolean flag to control if connection happen via secure mode or not
     """
 
-    def __init__(self, credentials_path, host=daemo.HOST, rerun_key=None, multi_threading=False):
+    def __init__(self, credentials_path, rerun_key=None, multi_threading=False, host=daemo.HOST, is_secure=True):
         logging.debug(msg="initializing client...")
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
+
+        self.http_proto = "http://"
+        self.websock_proto = "ws://"
+
+        if is_secure:
+            self.http_proto = "https://"
+            self.websock_proto = "wss://"
 
         self.host = host
         self.credentials_path = credentials_path
@@ -466,7 +474,7 @@ class DaemoClient:
             AUTHORIZATION: TOKEN % access_token
         }
 
-        self.ws = WebSocketClientFactory(daemo.WEBSOCKET + host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
+        self.ws = WebSocketClientFactory(self.websock_proto + host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
         self.ws.protocol = ClientProtocol
         self.ws.queue = queue
         connectWS(self.ws)
@@ -849,7 +857,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+        response = self.session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -859,7 +867,7 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.get(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+            response = self.session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response
 
@@ -877,7 +885,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.post(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+        response = self.session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -887,7 +895,7 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.post(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+            response = self.session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response
 
@@ -905,7 +913,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+        response = self.session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -915,6 +923,6 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.put(daemo.HTTP + self.host + relative_url, data=data, headers=headers)
+            response = self.session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response

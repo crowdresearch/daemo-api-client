@@ -130,6 +130,7 @@ Create an API script to launch project
 We already have a basic script ready in ``daemo.py`` where we need to update task input data and different callbacks which will be triggered at different stages.
 
 Once we open the script in editor, we can see that input data has a specific structure
+
 .. code-block:: python
 
     task_data = [

@@ -17,7 +17,7 @@ install_requires = [
 
 setup(
     name='daemo-api-client',
-    version='1.0.0',
+    version='1.0.2',
     packages=find_packages(),
     install_requires=install_requires,
     license='MIT',
