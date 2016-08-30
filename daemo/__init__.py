@@ -1,6 +1,6 @@
 import logging
 
-__version__ = "0.0.1"
+__version__ = "1.0.2"
 
 HOST = "daemo.stanford.edu"
 WS_BOT_SUBSCRIBE_URL = "/ws/bot?subscribe-user"
