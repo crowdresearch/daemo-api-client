@@ -21,16 +21,17 @@ You can also install from source:
     $ python setup.py install
 
 
-:doc:`Step by Step Tutorial </source/step_by_step>`
+`Step by Step Tutorial </source/step_by_step>`_
+-----------------------------------------------
 
 Examples
 --------
-* :doc:`Image Classification </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`
-* :doc:`NY Times Emojified </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/nyt_emoji.py>`
-* :doc:`Top 10 Professors in X discipline </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/prof_rank.py>`
-* :doc:`Trumpify </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify.py>`
-* :doc:`Trumpify (Peer Review) </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify_review.py>`
-* :doc:`Mock Trumpify </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/mock_trumpify.py>`
+* :doc:`Image Classification <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
+* :doc:`NY Times Emojified <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/nyt_emoji.py>`_
+* :doc:`Top 10 Professors in X discipline <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/prof_rank.py>`_
+* :doc:`Trumpify <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify.py>`_
+* :doc:`Trumpify (Peer Review) <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify_review.py>`_
+* :doc:`Mock Trumpify <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/mock_trumpify.py>`_
 
 Documentation
 -------------
