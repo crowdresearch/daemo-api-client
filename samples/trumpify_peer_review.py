@@ -7,7 +7,6 @@ from samples.utils import TwitterUtils
 CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_KEY = ''
-REVIEW_PROJECT_KEY = ''
 RERUN_KEY = ''
 
 INPUT_TWITTER_NAME = 'HillaryClinton'
