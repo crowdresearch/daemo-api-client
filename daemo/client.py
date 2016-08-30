@@ -170,6 +170,7 @@ class DaemoClient:
             }
 
             ratings = [rating]
+
         :param ignore_history: boolean value that determines whether historical ratings should be considered for updating this new rating.
         If true, a worker's score will be set to the score that is provided to rate.
         If peer review is being used, this value should be set to True.
