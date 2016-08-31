@@ -187,7 +187,7 @@ class DaemoClient:
         """
         logging.debug(msg="rate function called")
         data = {
-            "project_id": project_key,
+            "project_key": project_key,
             "ratings": ratings,
             "ignore_history": ignore_history
         }
@@ -592,8 +592,7 @@ class DaemoClient:
         else:
             logging.debug(msg="task rejected.")
 
-        task_status = self._update_approval_status(task_data)
-        task_status.raise_for_status()
+        self._update_approval_status(task_data)
 
         if task_data["accept"]:
             logging.debug(msg="calling completed callback")
@@ -631,8 +630,7 @@ class DaemoClient:
             for approval in approvals:
                 task_data["accept"] = approval
 
-                task_status = self._update_approval_status(task_data)
-                task_status.raise_for_status()
+                self._update_approval_status(task_data)
 
             approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
 
@@ -744,7 +742,9 @@ class DaemoClient:
         }
 
         response = self._post("/api/task-worker/bulk-update-status/", data=json.dumps(data))
-        return response
+        response.raise_for_status()
+
+        return response.json()
 
     def _fetch_task_status(self, task_id):
         response = self._get("/api/task/%s/is-done/" % task_id, data={})
