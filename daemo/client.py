@@ -324,10 +324,15 @@ class DaemoClient:
     def _replay_task(self, project_key, task_id, taskworker_id, taskworker):
         # re-queue submitted results
         payload = json.dumps({
-            "taskworker_id": taskworker_id,
-            "task_id": task_id,
-            "project_key": project_key,
-            "taskworker": taskworker
+            "type": "REGULAR",
+            "payload": {
+                "taskworker_id": taskworker_id,
+                "task_id": task_id,
+                "worker_id": taskworker["worker"],
+                "project_key": project_key,
+                "project_id": taskworker["project_data"]["id"],
+                "taskworker": taskworker
+            }
         })
 
         self.queue.put({
