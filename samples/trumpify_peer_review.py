@@ -4,8 +4,6 @@ import time
 from daemo.client import DaemoClient
 from samples.utils import TwitterUtils
 
-CREDENTIALS_FILE = 'credentials.json'
-
 PROJECT_KEY = ''
 RERUN_KEY = ''
 
@@ -16,7 +14,7 @@ TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
 twitter = TwitterUtils()
-daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+daemo = DaemoClient(rerun_key=RERUN_KEY)
 
 
 def transform_new_tweets(twitter_name, count, interval):
@@ -108,7 +106,7 @@ def create_review_task(worker_responses):
 
     :param worker_responses: submission made by a worker for a task
     """
-    daemo.peer_review(worker_responses, review_completed=rate_workers)
+    daemo.peer_review(PROJECT_KEY, worker_responses, review_completed=rate_workers)
 
 
 def rate_workers(ratings):

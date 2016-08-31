@@ -142,7 +142,8 @@ html_theme_path = [alabaster.get_path()]
 # documentation.
 #
 html_theme_options = {
-    'logo': 'logo.png'
+    'logo': 'logo.png',
+    'logo_text_align': 'left'
 }
 
 # Add any paths that contain custom themes here, relative to this directory.

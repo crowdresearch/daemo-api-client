@@ -72,9 +72,7 @@ def rate_workers(worker_responses):
     :param worker_responses: submission made by a worker for a task
     """
     for worker_response in worker_responses:
-        print worker_response.get('task_data').get('image_url').lower()
-        print get_response_text(worker_response)
-        # rate(worker_response)
+        rate(worker_response)
 
 
 def rate(worker_response):
