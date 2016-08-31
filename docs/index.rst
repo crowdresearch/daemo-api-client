@@ -21,8 +21,8 @@ You can also install from source:
     $ python setup.py install
 
 
-`Step by Step Tutorial </source/step_by_step.rst>`_
----------------------------------------------------
+`Step by Step Tutorial </source/step_by_step.html>`_
+----------------------------------------------------
 
 Examples
 --------
