@@ -1,5 +1,3 @@
-.. _examples:
-
 Step-by-step tutorial
 #####################
 
@@ -9,29 +7,8 @@ a full tutorial to learn how to use Daemo Crowdsourcing Platform to create a pro
 
 Imagine we are building an AI based image processing system to identify few animals like cat, dog and horse for which we have a repository of images which need to be correctly labelled for supervised training of the learning model. We will use Daemo to create this dataset of image links and associated labels which can be fed to the system.
 
-We will have distinct goals as mentioned below:
-
-..............
 Daemo Platform
-..............
-1. Creating a new project
-2. Using different components
-3. Using variable parameters to define input values
-4. Using labels to capture output values
-5. Configure project options
-
-................
-Daemo API Client
-................
-1. Installation
-2. Create an API script to launch project
-3. Build a workflow to approve workers' submissions
-4. Manage rating for the workers
-
-
-..............
-Daemo Platform
-..............
+==============
 
 Create a new project
 --------------------
@@ -105,9 +82,8 @@ Once it is submitted, a new form appears with instructions. Please follow the in
 Now the project is all set to be launched via API script.
 
 
-................
 Daemo API Client
-................
+================
 
 Installation
 ------------
