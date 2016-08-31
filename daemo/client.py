@@ -41,10 +41,9 @@ class DaemoClient:
 
     First download the credentials file from your Daemo User Profile. Fill in the RERUN_KEY which is considered incremental number here for each run.
     ::
-        CREDENTIALS_FILE = 'credentials.json'
         RERUN_KEY = '0001'
 
-        daemo = DaemoClient(credentials_path=CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+        daemo = DaemoClient(rerun_key=RERUN_KEY)
 
     :param credentials_path: path of the daemo credentials file which can be downloaded from daemo user profile (**Menu** >> **Get Credentials**)
     :param rerun_key: a string used to differentiate each script run. If this key is same, it replays the last results from worker responses and brings you to the last point when script stopped execution.
@@ -53,7 +52,8 @@ class DaemoClient:
     :param is_secure: boolean flag to control if connection happen via secure mode or not
     """
 
-    def __init__(self, credentials_path, rerun_key=None, multi_threading=False, host=daemo.HOST, is_secure=True):
+    def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=daemo.HOST,
+                 is_secure=True):
         logging.debug(msg="initializing client...")
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
 
@@ -99,7 +99,7 @@ class DaemoClient:
                 completed=post_to_twitter
             )
 
-        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project.
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is unique for each project.
         :param tasks: list object with data for each task in a key-value pair where each key is used in Daemo's Project Authoring Interface as replaceable value
 
         A typical tasks list object is given below which passes an id and tweet text as input for each task.
@@ -167,7 +167,7 @@ class DaemoClient:
         """
         Rate a worker submission
 
-        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project.
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is unique for each project.
         :param ratings: list object which provides ratings for one or more worker responses.
         Below, a single rating object is shown which must have three parameters - *task_id*, *worker_id* and *weight*.
         ::
@@ -195,10 +195,11 @@ class DaemoClient:
         response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
         return response
 
-    def peer_review(self, worker_responses, review_completed, inter_task_review=False):
+    def peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
         """
         Performs peer review for all the worker responses and when all ratings from peer feedback are received, review_completed callback is triggered.
 
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
         :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
@@ -208,24 +209,22 @@ class DaemoClient:
         :return: review response
         """
 
-        if not callable(review_completed):
-            pass
-
         thread = threading.Thread(
             target=self._peer_review,
             kwargs=dict(
+                project_key=project_key,
                 worker_responses=worker_responses,
                 inter_task_review=inter_task_review,
-                review_completed=review_completed,
-                project_key=None
+                review_completed=review_completed
             )
         )
         thread.start()
 
-    def peer_review_and_rate(self, worker_responses, project_key, inter_task_review=False):
+    def peer_review_and_rate(self, project_key, worker_responses, inter_task_review=False):
         """
         Performs peer review for all the worker responses and when all ratings from peer feedback are received, these ratings are fed back to the platform to update worker ratings.
 
+        :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is unique for each project
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
         :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
@@ -238,10 +237,10 @@ class DaemoClient:
         thread = threading.Thread(
             target=self._peer_review,
             kwargs=dict(
+                project_key=project_key,
                 worker_responses=worker_responses,
                 inter_task_review=inter_task_review,
-                review_completed=None,
-                project_key=project_key
+                review_completed=self._review_completed
             )
         )
         thread.start()
@@ -372,30 +371,53 @@ class DaemoClient:
                 responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
                 len(responses), num_workers)
 
-            results = [{
-                           "items": [{
-                                         "result": field["value"],
-                                         "template_item": self._get_template_item_id(field["name"],
-                                                                                     task["template"]["fields"])
-                                     } for field in response]
-                       } for response in responses]
+            results = [
+                {
+                    "items": [
+                        {
+                            "result": field["value"],
+                            "template_item": self._get_template_item_id(field["name"],
+                                                                        task["template"]["fields"])
+                        } for field in response]
+                } for response in responses]
 
             self._submit_results(
                 task["id"],
                 results
             )
 
-    def _peer_review(self, worker_responses, review_completed, project_key, inter_task_review=False):
+    def _peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
         task_workers = [response['id'] for response in worker_responses]
 
         response = self._launch_peer_review(task_workers, inter_task_review)
 
-        if review_completed is not None:
-            match_group_id = response['match_group_id']
-            self.cache[match_group_id] = review_completed
+        match_group_id = str(response['match_group_id'])
 
-        if project_key is not None:
-            self.cache['project_key'] = project_key
+        if match_group_id not in self.cache:
+            self.cache[match_group_id] = {}
+
+        if review_completed is not None:
+            self.cache[match_group_id]['project_key'] = project_key
+            self.cache[match_group_id]['review_completed'] = review_completed
+
+            if "scores" in response and len(response["scores"]) > 0:
+                self._replay_review(project_key, match_group_id, response["scores"])
+
+    def _replay_review(self, project_key, match_group_id, scores):
+        # re-queue submitted results
+        payload = json.dumps({
+            "type": "REVIEW",
+            "payload": {
+                "project_key": project_key,
+                "match_group_id": match_group_id,
+                "scores": scores
+            }
+        })
+
+        self.queue.put({
+            "payload": payload,
+            "isBinary": False
+        })
 
     def _get_template_item_id(self, template_item_name, template_items):
         """
@@ -576,15 +598,20 @@ class DaemoClient:
 
     def _process_review_message(self, payload):
         if payload['is_done']:
-            match_group_id = payload["match_group_id"]
-            ratings = self._get_trueskill_scores(match_group_id)
+            match_group_id = str(payload["match_group_id"])
 
-            if 'project_key' in self.cache:
-                project_key = self.cache['project_key']
-                self.rate(project_key, ratings, ignore_history=True)
-            elif match_group_id in self.cache:
-                callback = self.cache[match_group_id]
-                callback(ratings)
+            if "scores" in payload and len(payload["scores"]) > 0:
+                ratings = payload["scores"]
+            else:
+                ratings = self._get_trueskill_scores(match_group_id)
+
+            if match_group_id in self.cache:
+                project_key = self.cache[match_group_id]['project_key']
+                review_completed = self.cache[match_group_id]['review_completed']
+                review_completed(project_key, ratings)
+
+    def _review_completed(self, project_key, ratings, ignore_history=True):
+        self.rate(project_key, ratings, ignore_history=ignore_history)
 
     def _stream_response(self, batch_index, task_id, task_data, approve, completed):
         logging.debug(msg="streaming responses...")
@@ -771,7 +798,8 @@ class DaemoClient:
     def _launch_peer_review(self, task_workers, inter_task_review):
         data = {
             "task_workers": task_workers,
-            "inter_task_review": inter_task_review
+            "inter_task_review": inter_task_review,
+            "rerun_key": self.rerun_key
         }
 
         response = self._post("/api/task/peer-review/", data=json.dumps(data))

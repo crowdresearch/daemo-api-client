@@ -1,7 +1,7 @@
 .. Daemo Client documentation master file, created by
 
-Welcome to Daemo Client's documentation!
-========================================
+Python Client for Daemo API
+===========================
 
 Getting started
 ---------------
@@ -20,31 +20,12 @@ You can also install from source:
     $ cd daemo-api-client
     $ python setup.py install
 
-
-`Step by Step Tutorial <source/step_by_step.html>`_
----------------------------------------------------
-
-Examples
---------
-* `Image Classification <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
-* `NY Times Emojified <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/nyt_emoji.py>`_
-* `Top 10 Professors in X discipline <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/prof_rank.py>`_
-* `Trumpify <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify.py>`_
-* `Trumpify (Peer Review) <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/trumpify_review.py>`_
-* `Mock Trumpify <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/mock_trumpify.py>`_
-
-Documentation
--------------
-
-* Library index: :ref:`genindex`
-* Index of all modules: :ref:`modindex`
-* Search documentation: :ref:`search`
-
 .. toctree::
-    :maxdepth: 1
+    :maxdepth: 0
     :hidden:
 
-    source/daemo
+    source/daemo.client
+    source/step_by_step
     source/examples
 
 
