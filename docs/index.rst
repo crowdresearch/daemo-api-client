@@ -24,7 +24,7 @@ You can also install from source:
     :maxdepth: 0
     :hidden:
 
-    source/daemo.client
+    source/daemo_client
     source/step_by_step
     source/examples
 

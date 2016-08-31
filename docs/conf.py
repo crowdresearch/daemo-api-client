@@ -93,6 +93,8 @@ language = None
 # This patterns also effect to html_static_path and html_extra_path
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
+autodoc_default_flags = ['members', 'special-members']
+
 # The reST default role (used for this markup: `text`) to use for all
 # documents.
 #
@@ -143,7 +145,9 @@ html_theme_path = [alabaster.get_path()]
 #
 html_theme_options = {
     'logo': 'logo.png',
-    'logo_text_align': 'left'
+    'logo_text_align': 'left',
+    'github_user': 'crowdresearch',
+    'github_repo': 'daemo-api-client',
 }
 
 # Add any paths that contain custom themes here, relative to this directory.

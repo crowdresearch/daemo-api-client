@@ -13,31 +13,17 @@ from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
 from twisted.internet import reactor
 
 import daemo
+from daemo.constants import *
 from daemo.errors import Error
 from daemo.exceptions import AuthException
 from daemo.protocol import ClientProtocol
-
-GRANT_TYPE = "grant_type"
-REFRESH_TOKEN = "refresh_token"
-ACCESS_TOKEN = "access_token"
-CLIENT_ID = "client_id"
-CREDENTIALS_NOT_PROVIDED = "Authentication credentials were not provided."
-CONTENT_JSON = "application/json"
-TOKEN = "Bearer %s"
-AUTHORIZATION = "Authorization"
-CONTENT_TYPE = "Content-Type"
-STATUS_ACCEPTED = 3
-STATUS_REJECTED = 4
 
 __version__ = daemo.__version__
 
 
 class DaemoClient:
     """
-    Initializes Daemo Client
-        - Authentication with Daemo host server
-        - Connect to the host
-        - Fetch any submitted worker responses using the rerun_key
+    Initializes Daemo Client by authentication with Daemo host server.
 
     First download the credentials file from your Daemo User Profile. Fill in the RERUN_KEY which is considered incremental number here for each run.
     ::
@@ -46,13 +32,15 @@ class DaemoClient:
         daemo = DaemoClient(rerun_key=RERUN_KEY)
 
     :param credentials_path: path of the daemo credentials file which can be downloaded from daemo user profile (**Menu** >> **Get Credentials**)
+
     :param rerun_key: a string used to differentiate each script run. If this key is same, it replays the last results from worker responses and brings you to the last point when script stopped execution.
     :param multi_threading: False by default, bool value to enable multi-threaded response handling
     :param host: daemo server to connect to - uses a default server if not defined
     :param is_secure: boolean flag to control if connection happen via secure mode or not
+
     """
 
-    def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=daemo.HOST,
+    def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=HOST,
                  is_secure=True):
         logging.debug(msg="initializing client...")
         assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
@@ -103,7 +91,7 @@ class DaemoClient:
         :param tasks: list object with data for each task in a key-value pair where each key is used in Daemo's Project Authoring Interface as replaceable value
 
         A typical tasks list object is given below which passes an id and tweet text as input for each task.
-        Remember these keys -- id, tweet -- have been used while creating task fields on Daemo task authoring inteface.
+        Remember these keys -- id, tweet -- have been used while creating task fields on Daemo task authoring interface.
         ::
             tasks=[{
                 "id": id,
@@ -139,6 +127,7 @@ class DaemoClient:
                 return results
 
         :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
+
         """
         logging.debug(msg="publish function called...")
 
@@ -168,7 +157,9 @@ class DaemoClient:
         Rate a worker submission
 
         :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is unique for each project.
+
         :param ratings: list object which provides ratings for one or more worker responses.
+
         Below, a single rating object is shown which must have three parameters - *task_id*, *worker_id* and *weight*.
         ::
             rating = {
@@ -184,6 +175,7 @@ class DaemoClient:
         If peer review is being used, this value should be set to True.
 
         :return: rating response
+
         """
         logging.debug(msg="rate function called")
         data = {
@@ -197,16 +189,15 @@ class DaemoClient:
 
     def peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
         """
-        Performs peer review for all the worker responses and when all ratings from peer feedback are received, review_completed callback is triggered.
+        Performs peer review for all the worker responses and when all ratings from peer feedback are received, ``review_completed`` callback is triggered.
 
         :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is a unique for each project
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
-        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
-        If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity
-        If False, it only allows peer feedback among workers for the same task they completed
+        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not. If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity. If False, it only allows peer feedback among workers for the same task they completed
 
         :return: review response
+
         """
 
         thread = threading.Thread(
@@ -227,9 +218,7 @@ class DaemoClient:
         :param project_key: string key for the project as shown in Daemo's Project Authoring Interface. It is unique for each project
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
-        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not.
-        If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity
-        If False, it only allows peer feedback among workers for the same task they completed
+        :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not. If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity. If False, it only allows peer feedback among workers for the same task they completed
 
         :return: review response
         """
@@ -501,7 +490,7 @@ class DaemoClient:
             AUTHORIZATION: TOKEN % access_token
         }
 
-        self.ws = WebSocketClientFactory(self.websock_proto + host + daemo.WS_BOT_SUBSCRIBE_URL, headers=headers)
+        self.ws = WebSocketClientFactory(self.websock_proto + host + WS_BOT_SUBSCRIBE_URL, headers=headers)
         self.ws.protocol = ClientProtocol
         self.ws.queue = queue
         connectWS(self.ws)
@@ -858,7 +847,7 @@ class DaemoClient:
             REFRESH_TOKEN: self.refresh_token
         }
 
-        response = self._post(daemo.OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
+        response = self._post(OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
 
         if "error" in response.json():
             raise AuthException("Error refreshing access token. Please retry again.")
