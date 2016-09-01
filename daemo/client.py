@@ -399,7 +399,8 @@ class DaemoClient:
             "payload": {
                 "project_key": project_key,
                 "match_group_id": match_group_id,
-                "scores": scores
+                "scores": scores,
+                "is_done": True
             }
         })
 
@@ -579,7 +580,7 @@ class DaemoClient:
 
                     if self._all_batches_complete():
                         logging.debug(msg="are all batches done? yes")
-                        self._stop()
+                        # self._stop()
                     else:
                         logging.debug("are all batches done? no")
             else:
