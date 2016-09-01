@@ -649,7 +649,12 @@ class DaemoClient:
             logging.debug(msg="calling approved callback...")
             approvals = approve(tasks_data)
 
-            for approval in approvals:
+            tasks_approvals = zip(tasks_data, approvals)
+
+            for task_approval in tasks_approvals:
+                task_data = task_approval[0]
+                approval = task_approval[1]
+
                 task_data["accept"] = approval
 
                 self._update_approval_status(task_data)
@@ -758,6 +763,7 @@ class DaemoClient:
         return data
 
     def _update_approval_status(self, task):
+        logging.debug(msg="updating status for task %d" % task["id"])
         data = {
             "status": STATUS_ACCEPTED if task["accept"] else STATUS_REJECTED,
             "workers": [task["id"]]
