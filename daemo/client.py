@@ -275,10 +275,6 @@ class DaemoClient:
         logging.debug(msg="find and create missing tasks...")
 
         tasks = self._add_data(project_key, tasks, rerun_key)
-
-        from pprint import pprint
-        pprint(tasks)
-
         self._create_batch(project_key, tasks, approve, completed, stream, count)
 
         return tasks
