@@ -276,6 +276,9 @@ class DaemoClient:
 
         tasks = self._add_data(project_key, tasks, rerun_key)
 
+        from pprint import pprint
+        pprint(tasks)
+
         self._create_batch(project_key, tasks, approve, completed, stream, count)
 
         return tasks
@@ -430,13 +433,18 @@ class DaemoClient:
         expected = int(task_status["expected"])
 
         # compare result counts too
-        return is_done and expected == self.batches[batch_index]["submissions"][task_id]
+        logging.debug(msg="is task complete?")
+        logging.debug(msg="Expected = %d" % expected)
+        logging.debug(msg="Result = %d" % self.batches[batch_index]["submissions"][task_id])
+        return is_done and expected <= self.batches[batch_index]["submissions"][task_id]
 
     def _mark_task_completed(self, batch_index, task_id):
         if task_id in self.batches[batch_index]["status"]:
             self.batches[batch_index]["status"][task_id] = True
 
     def _is_batch_complete(self, batch_index):
+        logging.debug(msg="is batch complete?")
+        logging.debug(self.batches[batch_index]["status"].values())
         return all(self.batches[batch_index]["status"].values())
 
     def _mark_batch_completed(self, batch_index):
@@ -541,6 +549,7 @@ class DaemoClient:
 
             taskworker_id = int(payload.get("taskworker_id", 0))
             task_id = int(payload.get("task_id", 0))
+            worker_id = int(payload.get("worker_id", 0))
             project_key = payload.get("project_key", None)
             taskworker = payload.get("taskworker", None)
 
@@ -759,6 +768,9 @@ class DaemoClient:
 
         data["fields"] = fields
         del data["results"]
+
+        data["task_id"] = data["task"]
+        data["worker_id"] = data["worker"]
 
         return data
 
