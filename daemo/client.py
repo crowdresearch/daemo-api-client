@@ -884,7 +884,7 @@ class DaemoClient:
 
     # REST API =========================================================================================================
 
-    def _get(self, relative_url, data, headers=None, is_json=True, authorization=True):
+    def _get(self, relative_url, data=None, headers=None, is_json=True, authorization=True):
         if headers is None:
             headers = dict()
 
