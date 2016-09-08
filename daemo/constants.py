@@ -1,4 +1,5 @@
 HOST = "daemo.stanford.edu"
+SANDBOX = "daemo-test.herokuapp.com"
 WS_BOT_SUBSCRIBE_URL = "/ws/bot?subscribe-user"
 OAUTH_TOKEN_URL = "/api/oauth2-ng/token/"
 

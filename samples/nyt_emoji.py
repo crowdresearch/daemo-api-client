@@ -3,13 +3,11 @@ import time
 from daemo.client import DaemoClient
 from samples.utils import NYTUtils
 
-CREDENTIALS_FILE = 'credentials.json'
-
 PROJECT_KEY = ''
 RERUN_KEY = ''
 
 nyt = NYTUtils()
-daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+daemo = DaemoClient(rerun_key=RERUN_KEY)
 
 
 def transform_top_news(interval):

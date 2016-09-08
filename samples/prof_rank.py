@@ -1,11 +1,9 @@
 from daemo.client import DaemoClient
 
-CREDENTIALS_FILE = 'credentials.json'
-
 PROJECT_KEY = ''
 RERUN_KEY = ''
 
-daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+daemo = DaemoClient(rerun_key=RERUN_KEY)
 
 
 def find_professors():
