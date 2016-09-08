@@ -1,13 +1,10 @@
-import os
-import sys
+from __future__ import division
+
 import threading
 import time
-from __future__ import division
 
 from daemo.client import DaemoClient
 from samples.utils import TwitterUtils
-
-CREDENTIALS_FILE = 'credentials.json'
 
 PROJECT_KEY = ''
 REVIEW_PROJECT_KEY = ''
@@ -20,7 +17,7 @@ TWEET_COUNT = 10
 MONITOR_INTERVAL_MIN = 60
 
 twitter = TwitterUtils()
-daemo = DaemoClient(CREDENTIALS_FILE, rerun_key=RERUN_KEY)
+daemo = DaemoClient(rerun_key=RERUN_KEY)
 
 
 def transform_new_tweets(twitter_name, count, interval):
