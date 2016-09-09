@@ -10,16 +10,16 @@ if sys.version_info < (2, 7):
     sys.exit(1)
 
 install_requires = [
-    'requests',
-    'autobahn',
-    'twisted',
-    'pyOpenSSL',
-    'service_identity'
+    'requests==2.11.1',
+    'autobahn==0.16.0',
+    'twisted==16.4.0',
+    'pyOpenSSL==16.1.0',
+    'service_identity==16.0.0'
 ]
 
 setup(
     name='daemo-api-client',
-    version='1.0.3',
+    version='1.0.4',
     packages=find_packages(exclude=['samples']),
     install_requires=install_requires,
     license='MIT',
