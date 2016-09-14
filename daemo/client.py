@@ -1,6 +1,6 @@
 import fcntl
 import json
-import logging
+import logging.config
 import multiprocessing
 import os
 import signal
@@ -9,6 +9,7 @@ import threading
 from inspect import isfunction
 
 import requests
+import yaml
 from autobahn.twisted.websocket import connectWS
 from twisted.internet import reactor
 
@@ -38,11 +39,17 @@ class DaemoClient:
     :param host: daemo server to connect to - uses a default server if not defined
     :param is_secure: boolean flag to control if connection happen via secure mode or not
     :param is_sandbox: boolean flag to control if tasks will be posted to sandbox instead of production system of Daemo
+    :param log_config: standard python logging module based dictionary config to control logging
 
     """
 
     def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=None,
-                 is_secure=True, is_sandbox=False):
+                 is_secure=True, is_sandbox=False, log_config=None):
+
+        if log_config is None:
+            with open('logging.conf') as f:
+                log_config = yaml.load(f)
+        logging.config.dictConfig(log_config)
         
         log.info(msg="initializing client...")
         self.check_dependency(credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path"))
@@ -263,8 +270,8 @@ class DaemoClient:
         log.info(msg="publishing project...")
         project = self._publish_project(project_key)
 
-        log.info(msg="open [ %s%s%s ] to preview project progress" % (
-            self.http_proto, self.host, "/project-review/%s" % project["id"]))
+        log.info(msg="open [ %s%s/project-review/%s ] to preview project progress" % (
+            self.http_proto, self.host, project["id"]))
 
         new_tasks = self._create_tasks(project_key=project_key,
                                        tasks=tasks,
@@ -897,6 +904,7 @@ class DaemoClient:
 
     def _get(self, relative_url, data=None, headers=None, is_json=True, authorization=True):
         session = requests.session()
+        base_url = self.http_proto + self.host
 
         if headers is None:
             headers = dict()
@@ -911,7 +919,11 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = None
+        try:
+            response = session.get(base_url + relative_url, data=data, headers=headers)
+        except Exception, e:
+            self.log_exit(e)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -921,12 +933,13 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.get(base_url + relative_url, data=data, headers=headers)
 
         return response
 
     def _post(self, relative_url, data, headers=None, is_json=True, authorization=True):
         session = requests.session()
+        base_url = self.http_proto + self.host
 
         if headers is None:
             headers = dict()
@@ -941,7 +954,11 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = None
+        try:
+            response = session.post(base_url + relative_url, data=data, headers=headers)
+        except Exception, e:
+            self.log_exit(e)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -951,13 +968,15 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.post(base_url + relative_url, data=data, headers=headers)
 
         return response
 
     def _put(self, relative_url, data, headers=None, is_json=True, authorization=True):
         session = requests.session()
 
+        base_url = self.http_proto + self.host
+
         if headers is None:
             headers = dict()
 
@@ -971,7 +990,11 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = None
+        try:
+            response = session.put(base_url + relative_url, data=data, headers=headers)
+        except Exception, e:
+            self.log_exit(e)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -981,27 +1004,25 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.put(base_url + relative_url, data=data, headers=headers)
 
         return response
 
-    @staticmethod
-    def check_dependency(condition, message):
+    def check_dependency(self, condition, message):
         try:
             if not condition:
                 raise ClientException(message)
         except Exception, e:
-            debug = logging.getLogger().isEnabledFor(logging.DEBUG)
-            log.error(e, exc_info=debug)
-            exit()
+            self.log_exit(e)
 
-
-    @staticmethod
-    def raise_if_error(context, response):
+    def raise_if_error(self, context, response):
         try:
             if 400 <= response.status_code < 600:
                 raise ServerException(context, response.status_code, response.text)
         except Exception, e:
-            debug = logging.getLogger().isEnabledFor(logging.DEBUG)
-            log.error(e, exc_info=debug)
-            exit()
+            self.log_exit(e)
+
+    def log_exit(self, e):
+        debug = logging.getLogger().isEnabledFor(logging.DEBUG)
+        log.error(e, exc_info=debug)
+        exit()

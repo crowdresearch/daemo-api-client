@@ -15,6 +15,7 @@ install_requires = [
     'twisted==16.4.0',
     'pyOpenSSL==16.1.0',
     'service_identity==16.0.0',
+    'pyyaml==3.12',
     'rainbow_logging_handler==2.2.2'
 ]
 
@@ -27,7 +28,7 @@ setup(
     author="Daemo",
     author_email="daemo@cs.stanford.edu",
     url="https://github.com/crowdresearch/daemo-api-client/",
-    description="Client library for Daemo",
-    long_description='Client library for Daemo',
+    description="Python API Client for Daemo",
+    long_description='Python API Client for Daemo Crowdsourcing Platform. More information is available at http://daemo-api-client.readthedocs.io/en/latest/',
     keywords="daemo crowdsourcing client"
 )
