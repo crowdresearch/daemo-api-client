@@ -9,16 +9,16 @@ import threading
 from inspect import isfunction
 
 import requests
-from autobahn.twisted.websocket import WebSocketClientFactory, connectWS
+from autobahn.twisted.websocket import connectWS
 from twisted.internet import reactor
 
-import daemo
+from daemo.client_factory import ClientFactory
 from daemo.constants import *
 from daemo.errors import Error
-from daemo.exceptions import AuthException
-from daemo.protocol import ClientProtocol
+from daemo.exceptions import ServerException, ClientException
 
-__version__ = daemo.__version__
+
+log = logging.getLogger(__name__)
 
 
 class DaemoClient:
@@ -42,8 +42,9 @@ class DaemoClient:
 
     def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=HOST,
                  is_secure=True):
-        logging.debug(msg="initializing client...")
-        assert credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path")
+        
+        log.info(msg="initializing client...")
+        self.check_dependency(credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path"))
 
         self.http_proto = "http://"
         self.websock_proto = "ws://"
@@ -129,15 +130,15 @@ class DaemoClient:
         :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
 
         """
-        logging.debug(msg="publish function called...")
+        log.debug(msg="publish function called...")
 
-        assert project_key is not None and len(project_key) > 0, Error.required("project_key")
-        assert tasks is not None and len(tasks) >= 0, Error.required("tasks")
-        assert isfunction(approve), Error.func_def_undefined("approve")
-        assert isfunction(completed), Error.func_def_undefined("completed")
+        self.check_dependency(project_key is not None and len(project_key) > 0, Error.required("project_key"))
+        self.check_dependency(tasks is not None and len(tasks) >= 0, Error.required("tasks"))
+        self.check_dependency(isfunction(approve), Error.func_def_undefined("approve"))
+        self.check_dependency(isfunction(completed), Error.func_def_undefined("completed"))
 
         if mock_workers is not None:
-            assert isfunction(mock_workers), Error.func_def_undefined("mock_workers")
+            self.check_dependency(isfunction(mock_workers), Error.func_def_undefined("mock_workers"))
 
         thread = threading.Thread(
             target=self._publish,
@@ -177,7 +178,7 @@ class DaemoClient:
         :return: rating response
 
         """
-        logging.debug(msg="rate function called")
+        log.debug(msg="rate function called")
         data = {
             "project_key": project_key,
             "ratings": ratings,
@@ -199,7 +200,7 @@ class DaemoClient:
         :return: review response
 
         """
-
+        log.debug(msg="peer review function called...")
         thread = threading.Thread(
             target=self._peer_review,
             kwargs=dict(
@@ -223,6 +224,7 @@ class DaemoClient:
         :return: review response
         """
 
+        log.debug(msg="rate function called...")
         thread = threading.Thread(
             target=self._peer_review,
             kwargs=dict(
@@ -240,7 +242,6 @@ class DaemoClient:
         else:
             self._persist_tokens()
 
-        self.session = requests.session()
         self._refresh_token()
 
         self._register_signals()
@@ -251,7 +252,11 @@ class DaemoClient:
 
     def _publish(self, project_key, tasks, approve, completed, stream, mock_workers, rerun_key):
         # change status of project to published if not already set
+        log.info(msg="publishing project...")
         project = self._publish_project(project_key)
+
+        log.info(msg="open [ %s%s%s ] to preview project progress" % (
+            self.http_proto, self.host, "/project-review/%s" % project["id"]))
 
         new_tasks = self._create_tasks(project_key=project_key,
                                        tasks=tasks,
@@ -272,7 +277,7 @@ class DaemoClient:
                 thread.start()
 
     def _create_tasks(self, project_key, tasks, approve, completed, stream, rerun_key, count):
-        logging.debug(msg="find and create missing tasks...")
+        log.info(msg="adding tasks...")
 
         tasks = self._add_data(project_key, tasks, rerun_key)
         self._create_batch(project_key, tasks, approve, completed, stream, count)
@@ -310,6 +315,7 @@ class DaemoClient:
 
     def _replay_task(self, project_key, task_id, taskworker_id, taskworker):
         # re-queue submitted results
+        log.info(msg="adding previous worker submissions...")
         payload = json.dumps({
             "type": "REGULAR",
             "payload": {
@@ -328,7 +334,7 @@ class DaemoClient:
         })
 
     def _map_task(self, task, batch_index):
-        assert "id" in task and task["id"] is not None, "Invalid task"
+        self.check_dependency("id" in task and task["id"] is not None, "Invalid task")
 
         task_id = task["id"]
 
@@ -346,7 +352,7 @@ class DaemoClient:
             }
 
     def _mock_task(self, task_id, mock_workers):
-        logging.debug(msg="mocking workers...")
+        log.info(msg="mocking workers...")
 
         task = self._fetch_task(task_id)
 
@@ -355,9 +361,9 @@ class DaemoClient:
 
             responses = mock_workers(task, num_workers)
 
-            assert responses is not None and len(
+            self.check_dependency(responses is not None and len(
                 responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
-                len(responses), num_workers)
+                len(responses), num_workers))
 
             results = [
                 {
@@ -393,6 +399,7 @@ class DaemoClient:
 
     def _replay_review(self, project_key, match_group_id, scores):
         # re-queue submitted results
+        log.info(msg="adding previous peer review submissions...")
         payload = json.dumps({
             "type": "REVIEW",
             "payload": {
@@ -429,28 +436,29 @@ class DaemoClient:
         expected = int(task_status["expected"])
 
         # compare result counts too
-        logging.debug(msg="is task complete?")
-        logging.debug(msg="Expected = %d" % expected)
-        logging.debug(msg="Result = %d" % self.batches[batch_index]["submissions"][task_id])
+        log.debug(msg="is task complete?")
+        log.debug(msg="Expected = %d, Result = %d" % (expected, self.batches[batch_index]["submissions"][task_id]))
+
         return is_done and expected <= self.batches[batch_index]["submissions"][task_id]
 
     def _mark_task_completed(self, batch_index, task_id):
+        log.debug(msg="marking task %d complete?" % task_id)
         if task_id in self.batches[batch_index]["status"]:
             self.batches[batch_index]["status"][task_id] = True
 
     def _is_batch_complete(self, batch_index):
-        logging.debug(msg="is batch complete?")
-        logging.debug(self.batches[batch_index]["status"].values())
         return all(self.batches[batch_index]["status"].values())
 
     def _mark_batch_completed(self, batch_index):
+        log.debug(msg="marking batch %d complete?" % batch_index)
         self.batches[batch_index]["is_complete"] = True
 
     def _all_batches_complete(self):
         return all([batch["is_complete"] for batch in self.batches])
 
     def _stop(self):
-        logging.debug(msg="stop everything")
+        log.info(msg="disconnecting channels...")
+        log.info(msg="press [Ctrl+C] to terminate...")
         self.queue.put(None)
         reactor.callFromThread(reactor.stop)
 
@@ -489,14 +497,14 @@ class DaemoClient:
         self.ws_process.start()
 
     def _create_websocket(self, queue, access_token, host):
-        logging.debug(msg="open websocket connection")
+        log.debug(msg="open websocket connection")
 
         headers = {
             AUTHORIZATION: TOKEN % access_token
         }
 
-        self.ws = WebSocketClientFactory(self.websock_proto + host + WS_BOT_SUBSCRIBE_URL, headers=headers)
-        self.ws.protocol = ClientProtocol
+        self.ws = ClientFactory(self.websock_proto + host + WS_BOT_SUBSCRIBE_URL, headers=headers)
+        # self.ws.protocol = ClientProtocol
         self.ws.queue = queue
         connectWS(self.ws)
         reactor.run()
@@ -514,10 +522,10 @@ class DaemoClient:
             if data is None:
                 break
 
-            logging.debug(msg="got new message")
+            log.debug(msg="got new message")
 
             if not data["isBinary"]:
-                logging.debug("<<<{}>>>".format(data["payload"].decode("utf8")))
+                log.debug("<<<{}>>>".format(data["payload"].decode("utf8")))
 
             thread = threading.Thread(
                 target=self._process_message,
@@ -532,7 +540,7 @@ class DaemoClient:
                 thread.join()
 
     def _process_message(self, payload, isBinary):
-        logging.debug(msg="processing message...")
+        log.debug(msg="processing message...")
 
         if not isBinary:
             response = json.loads(payload.decode("utf8"))
@@ -551,9 +559,9 @@ class DaemoClient:
 
             # ignore data pushed via GUI (has no batch info)
             if task_id in self.tasks:
-                assert taskworker_id > 0, Error.required("taskworker_id")
-                assert task_id > 0, Error.required("task_id")
-                assert project_key is not None, Error.required("project_key")
+                self.check_dependency(taskworker_id > 0, Error.required("taskworker_id"))
+                self.check_dependency(task_id > 0, Error.required("task_id"))
+                self.check_dependency(project_key is not None, Error.required("project_key"))
 
                 batch_indices = self.tasks[task_id]["batches"]
 
@@ -563,10 +571,10 @@ class DaemoClient:
                     task_data = self._transform_task_results(taskworker)
 
                 for batch_index in batch_indices:
-                    assert batch_index < len(self.batches) \
-                           and self.batches[batch_index] is not None, "Missing batch for task"
+                    self.check_dependency(batch_index < len(self.batches) \
+                           and self.batches[batch_index] is not None, "Missing batch for task")
 
-                    assert task_data is not None, "No worker responses for the task found"
+                    self.check_dependency(task_data is not None, "No worker responses for the task found")
 
                     config = self.batches[batch_index]
 
@@ -584,12 +592,12 @@ class DaemoClient:
                         self._aggregate_responses(batch_index, task_id, task_data, approve, completed)
 
                     if self._all_batches_complete():
-                        logging.debug(msg="are all batches done? yes")
+                        log.debug(msg="are all batches done? yes")
                         # self._stop()
                     else:
-                        logging.debug("are all batches done? no")
+                        log.debug("are all batches done? no")
             else:
-                logging.debug("No corresponding task found. Message ignored.")
+                log.debug("No corresponding task found. Message ignored.")
 
     def _process_review_message(self, payload):
         if payload['is_done']:
@@ -609,36 +617,36 @@ class DaemoClient:
         self.rate(project_key, ratings, ignore_history=ignore_history)
 
     def _stream_response(self, batch_index, task_id, task_data, approve, completed):
-        logging.debug(msg="streaming responses...")
+        log.debug(msg="streaming responses...")
 
-        logging.debug(msg="calling approved callback...")
+        log.debug(msg="calling approved callback...")
 
         if approve([task_data]):
             task_data["accept"] = True
-            logging.debug(msg="task approved.")
+            log.debug(msg="task approved.")
         else:
-            logging.debug(msg="task rejected.")
+            log.debug(msg="task rejected.")
 
         self._update_approval_status(task_data)
 
         if task_data["accept"]:
-            logging.debug(msg="calling completed callback")
+            log.debug(msg="calling completed callback")
             completed([task_data])
 
         is_done = self._is_task_complete(batch_index, task_id)
-        logging.debug(msg="is task %d done? %s" % (task_id, is_done))
+        log.debug(msg="is task %d done? %s" % (task_id, is_done))
 
         if is_done:
             self._mark_task_completed(batch_index, task_id)
 
     def _aggregate_responses(self, batch_index, task_id, task_data, approve, completed):
-        logging.debug(msg="aggregating responses...")
+        log.debug(msg="aggregating responses...")
 
         # store it for aggregation (stream = False)
         self._aggregate(batch_index, task_id, task_data)
 
         is_done = self._is_task_complete(batch_index, task_id)
-        logging.debug(msg="is task %d done? %s" % (task_id, is_done))
+        # log.debug(msg="is task %d done? %s" % (task_id, is_done))
 
         if is_done:
             self._mark_task_completed(batch_index, task_id)
@@ -648,10 +656,10 @@ class DaemoClient:
         if is_done:
             self._mark_batch_completed(batch_index)
 
-            logging.debug(msg="is batch done? True")
+            log.debug(msg="is batch done? True")
             tasks_data = self._get_aggregated(batch_index)
 
-            logging.debug(msg="calling approved callback...")
+            log.debug(msg="calling approved callback...")
             approvals = approve(tasks_data)
 
             tasks_approvals = zip(tasks_data, approvals)
@@ -666,16 +674,16 @@ class DaemoClient:
 
             approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
 
-            logging.debug(msg="calling completed callback...")
+            log.debug(msg="calling completed callback...")
             completed(approved_tasks)
         else:
-            logging.debug(msg="is batch done? False")
+            log.debug(msg="is batch done? False")
 
     # Backend API ======================================================================================================
 
     def _fetch_task(self, task_id):
-        response = self._get("/api/task/%d/" % task_id, data=json.dumps({}))
-        response.raise_for_status()
+        response = self._get(API.task % task_id, data=json.dumps({}))
+        self.raise_if_error(response)
 
         data = response.json()
 
@@ -719,42 +727,41 @@ class DaemoClient:
         return task
 
     def _fetch_config(self, rerun_key):
-        response = self._get("/api/task/?filter_by=rerun_key&rerun_key=%s" % rerun_key, data=json.dumps({}))
-        response.raise_for_status()
+        response = self._get(API.rerun_config % rerun_key, data=json.dumps({}))
+        self.raise_if_error(response)
 
         return response.json()
 
     def _publish_project(self, project_id):
-        response = self._post("/api/project/%s/publish/" % project_id, data=json.dumps({}))
-        response.raise_for_status()
+        response = self._post(API.publish_project % project_id, data=json.dumps({}))
+        self.raise_if_error("publish project", response)
 
         return response.json()
 
     def _add_data(self, project_key, tasks, rerun_key):
-        response = self._post("/api/project/%s/add-data/" % project_key, data=json.dumps({
+        response = self._post(API.add_tasks % project_key, data=json.dumps({
             "tasks": tasks,
             "rerun_key": rerun_key
         }))
 
-        response.raise_for_status()
+        self.raise_if_error("publish project", response)
 
         return response.json()
 
-    def _get_task_results_by_task_id(self, task_id):
-        response = self._get("/api/task-worker/list-submissions/?task_id=%d" % task_id, data=json.dumps({}))
-        response.raise_for_status()
-
-        return response.json()
+    # def _get_task_results_by_task_id(self, task_id):
+    #     response = self._get(API.task_results % task_id, data=json.dumps({}))
+    #     self.raise_if_error(response)
+    #
+    #     return response.json()
 
     def _get_task_results_by_taskworker_id(self, taskworker_id):
         try:
-            response = self._get("/api/task-worker/%d/" % taskworker_id, data={})
-            response.raise_for_status()
+            response = self._get(API.task_worker_results % taskworker_id, data={})
+            self.raise_if_error("process result", response)
             results = response.json()
 
             return self._transform_task_results(results)
         except Exception as e:
-            print e.message
             return None
 
     def _transform_task_results(self, data):
@@ -771,20 +778,20 @@ class DaemoClient:
         return data
 
     def _update_approval_status(self, task):
-        logging.debug(msg="updating status for task %d" % task["id"])
+        log.debug(msg="updating status for task %d" % task["id"])
         data = {
             "status": STATUS_ACCEPTED if task["accept"] else STATUS_REJECTED,
             "workers": [task["id"]]
         }
 
-        response = self._post("/api/task-worker/bulk-update-status/", data=json.dumps(data))
-        response.raise_for_status()
+        response = self._post(API.update_task_status, data=json.dumps(data))
+        self.raise_if_error("task approval", response)
 
         return response.json()
 
     def _fetch_task_status(self, task_id):
-        response = self._get("/api/task/%s/is-done/" % task_id, data={})
-        response.raise_for_status()
+        response = self._get(API.task_status % task_id, data={})
+        self.raise_if_error("task status", response)
 
         task_data = response.json()
         return task_data
@@ -795,8 +802,8 @@ class DaemoClient:
             "results": results
         }
 
-        response = self._post("/api/task-worker-result/mock-results/", data=json.dumps(data))
-        response.raise_for_status()
+        response = self._post(API.mock_results, data=json.dumps(data))
+        self.raise_if_error("result submission", response)
         return response.json()
 
     def _launch_peer_review(self, task_workers, inter_task_review):
@@ -806,13 +813,13 @@ class DaemoClient:
             "rerun_key": self.rerun_key
         }
 
-        response = self._post("/api/task/peer-review/", data=json.dumps(data))
-        response.raise_for_status()
+        response = self._post(API.peer_review, data=json.dumps(data))
+        self.raise_if_error("peer review", response)
         return response.json()
 
     def _get_trueskill_scores(self, match_group_id):
-        response = self._get("/api/worker-requester-rating/trueskill/?match_group_id={}".format(match_group_id))
-        response.raise_for_status()
+        response = self._get(API.true_skill_score.format(match_group_id))
+        self.raise_if_error("rating", response)
 
         return response.json()
 
@@ -834,9 +841,9 @@ class DaemoClient:
         with open(self.credentials_path, "r") as infile:
             data = json.load(infile)
 
-            assert data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID)
-            assert data[ACCESS_TOKEN] is not None and len(data[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN)
-            assert data[REFRESH_TOKEN] is not None and len(data[REFRESH_TOKEN]) > 0, Error.required(REFRESH_TOKEN)
+            self.check_dependency(data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID))
+            self.check_dependency(data[ACCESS_TOKEN] is not None and len(data[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN))
+            self.check_dependency(data[REFRESH_TOKEN] is not None and len(data[REFRESH_TOKEN]) > 0, Error.required(REFRESH_TOKEN))
 
             self.client_id = data[CLIENT_ID]
             self.access_token = data[ACCESS_TOKEN]
@@ -865,13 +872,13 @@ class DaemoClient:
         response = self._post(OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
 
         if "error" in response.json():
-            raise AuthException("Error refreshing access token. Please retry again.")
+            raise ServerException("auth", "Error refreshing access token. Please retry again.", 400)
         else:
             response = response.json()
 
-            assert response[ACCESS_TOKEN] is not None and len(response[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN)
-            assert response[REFRESH_TOKEN] is not None and len(response[REFRESH_TOKEN]) > 0, Error.required(
-                REFRESH_TOKEN)
+            self.check_dependency(response[ACCESS_TOKEN] is not None and len(response[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN))
+            self.check_dependency(response[REFRESH_TOKEN] is not None and len(response[REFRESH_TOKEN]) > 0, Error.required(
+                REFRESH_TOKEN))
 
             self.access_token = response.get(ACCESS_TOKEN)
             self.refresh_token = response.get(REFRESH_TOKEN)
@@ -881,6 +888,8 @@ class DaemoClient:
     # REST API =========================================================================================================
 
     def _get(self, relative_url, data=None, headers=None, is_json=True, authorization=True):
+        session = requests.session()
+
         if headers is None:
             headers = dict()
 
@@ -894,7 +903,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -904,11 +913,13 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.get(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response
 
     def _post(self, relative_url, data, headers=None, is_json=True, authorization=True):
+        session = requests.session()
+
         if headers is None:
             headers = dict()
 
@@ -922,7 +933,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -932,11 +943,13 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.post(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response
 
     def _put(self, relative_url, data, headers=None, is_json=True, authorization=True):
+        session = requests.session()
+
         if headers is None:
             headers = dict()
 
@@ -950,7 +963,7 @@ class DaemoClient:
                 CONTENT_TYPE: CONTENT_JSON
             })
 
-        response = self.session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
+        response = session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         if self._is_auth_error(response):
             self._refresh_token()
@@ -960,6 +973,27 @@ class DaemoClient:
                     AUTHORIZATION: TOKEN % self.access_token
                 })
 
-            response = self.session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
+            response = session.put(self.http_proto + self.host + relative_url, data=data, headers=headers)
 
         return response
+
+    @staticmethod
+    def check_dependency(condition, message):
+        try:
+            if not condition:
+                raise ClientException(message)
+        except Exception, e:
+            debug = logging.getLogger().isEnabledFor(logging.DEBUG)
+            log.error(e, exc_info=debug)
+            exit()
+
+
+    @staticmethod
+    def raise_if_error(context, response):
+        try:
+            if 400 <= response.status_code < 600:
+                raise ServerException(context, response.status_code, response.text)
+        except Exception, e:
+            debug = logging.getLogger().isEnabledFor(logging.DEBUG)
+            log.error(e, exc_info=debug)
+            exit()

@@ -1,7 +1,8 @@
-autobahn==0.14.1
+autobahn==0.16.0
 requests==2.10.0
-twisted
+twisted==16.4.0
 sphinx
 sphinx-autobuild
-pyOpenSSL
-service_identity
+pyOpenSSL==16.1.0
+service_identity==16.0.0
+rainbow_logging_handler

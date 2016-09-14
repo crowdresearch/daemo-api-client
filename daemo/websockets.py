@@ -4,13 +4,16 @@ from autobahn.twisted.websocket import WebSocketClientProtocol
 
 from daemo.errors import Error
 
+log = logging.getLogger("daemo.client")
+
 
 class ClientProtocol(WebSocketClientProtocol):
     def onConnect(self, response):
-        logging.debug("### channel connected ###")
+        log.info("channel connected")
+        self.factory.resetDelay()
 
     def onOpen(self):
-        logging.debug("### channel opened ###")
+        log.info("channel opened")
 
         assert hasattr(self.factory, "queue") and self.factory.queue is not None, \
             Error.required("queue")
@@ -23,8 +26,8 @@ class ClientProtocol(WebSocketClientProtocol):
 
     def onSend(self, data):
         self.sendMessage(data.encode("utf8"))
-        logging.debug("<<<{}>>>".format(data))
+        log.debug("<<<{}>>>".format(data))
 
     def onClose(self, wasClean, code, reason):
-        logging.debug("### channel closed ###")
-        logging.debug(reason)
+        log.debug("channel closed")
+        log.debug(reason)

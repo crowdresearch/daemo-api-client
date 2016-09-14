@@ -1,12 +1,6 @@
-import logging
+"""
+Python API Client for Daemo Crowdsourcing Platform
+More information is available at http://daemo-api-client.readthedocs.io/en/latest/
+"""
 
-__version__ = "1.0.2"
-
-try:
-    from logging import NullHandler
-except ImportError:
-    class NullHandler(logging.Handler):
-        def emit(self, record):
-            pass
-
-logging.getLogger(__name__).addHandler(NullHandler())
+from .client import DaemoClient
