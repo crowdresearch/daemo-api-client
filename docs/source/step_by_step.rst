@@ -1,7 +1,7 @@
 Step-by-step tutorial
 #####################
 
-The `samples directory </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/>`_ in
+The `samples directory <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/>`_ in
 the Daemo API Client contains many examples to get you started, but here's
 a full tutorial to learn how to use Daemo Crowdsourcing Platform to create a project to classify images and write a script to monitor task submissions and rate workers.
 
@@ -137,7 +137,7 @@ Once all tasks have a worker response, ``approve`` function in the script will b
 
 This function as per `API Client Documentation <http://daemo-api-client.readthedocs.io/en/latest/source/daemo.client.html>`_  is used to approve worker submissions to release payment. We will write a basic procedure to assess if worker did the right job and approve his/her submission by passing a boolean value for each worker submission as a response.
 
-Check the full script at `Image Classification </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
+Check the full script at `Image Classification <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
 
 Manage rating for the workers
 -----------------------------
