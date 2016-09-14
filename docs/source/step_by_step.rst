@@ -1,9 +1,9 @@
 Step-by-step tutorial
 #####################
 
-The `samples directory </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/>`_ in
+The `samples directory <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/>`_ in
 the Daemo API Client contains many examples to get you started, but here's
-a full tutorial to learn how to use Daemo Crowdsourcing Platform to create a project to classify images and write a script to monitor task submissions and rate workers.
+a full tutorial to learn how to use `Daemo Crowdsourcing Platform <https://daemo.herokuapp.com>`_ to create a project to classify images and write a script to monitor task submissions and rate workers.
 
 Imagine we are building an AI based image processing system to identify few animals like cat, dog and horse for which we have a repository of images which need to be correctly labelled for supervised training of the learning model. We will use Daemo to create this dataset of image links and associated labels which can be fed to the system.
 
@@ -36,7 +36,9 @@ We can choose from Instructions, Text, Number, Check-box (Multi Selection), Radi
 
 For the current task, we will add an image component to show an image to be classified and a radio-box component with a list of labels/categories to choose from. Image will be an input to the task and we would like to get it labelled or classified for a category as an output by workers.
 
-To add an image component, Click on the ``hill`` sign which denotes image. An image component will get added to the interface. Drag the component from the handle on the left to the top of the interface so that it appears above the radio-box component.
+To add an image component, Click on the |hill| sign which denotes image. An image component will get added to the interface. Drag the component from the handle on the left to the top of the interface so that it appears above the radio-box component.
+
+.. |hill| image:: images/hill.png
 
 .. image:: images/adding-image-input.png
 
@@ -60,7 +62,10 @@ Configure project options
 -------------------------
 
 Now the project design is complete. We will configure the project options for number of workers needed for each task and how much they will be paid for each task.
-Fill the ``Minutes allotted per task`` to 15 which will set the time a worker is allowed to complete the task. Leave the other options as default for now.
+Fill the ``Minutes allotted per task`` to 15 which will set the time a worker is allowed to complete the task.
+Provide a value for price each worker should be paid if task is approved.
+Leave the other options as default for now.
+
 .. image:: images/project-options.png
 
 Once we have filled the options, Click on ``Done``.
@@ -122,7 +127,7 @@ Once we open the script in editor, we can see that input data has a specific str
     task_data = [
         {
             "image_url": "value"
-        }
+        },
         {
             "image_url": "value"
         }
@@ -137,7 +142,7 @@ Once all tasks have a worker response, ``approve`` function in the script will b
 
 This function as per `API Client Documentation <http://daemo-api-client.readthedocs.io/en/latest/source/daemo.client.html>`_  is used to approve worker submissions to release payment. We will write a basic procedure to assess if worker did the right job and approve his/her submission by passing a boolean value for each worker submission as a response.
 
-Check the full script at `Image Classification </https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
+Check the full script at `Image Classification <https://github.com/crowdresearch/daemo-api-client/tree/master/samples/image_classify.py>`_
 
 Manage rating for the workers
 -----------------------------
