@@ -14,7 +14,8 @@ install_requires = [
     'autobahn==0.16.0',
     'twisted==16.4.0',
     'pyOpenSSL==16.1.0',
-    'service_identity==16.0.0'
+    'service_identity==16.0.0',
+    'rainbow_logging_handler==2.2.2'
 ]
 
 setup(
