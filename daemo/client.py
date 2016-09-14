@@ -37,11 +37,12 @@ class DaemoClient:
     :param multi_threading: False by default, bool value to enable multi-threaded response handling
     :param host: daemo server to connect to - uses a default server if not defined
     :param is_secure: boolean flag to control if connection happen via secure mode or not
+    :param is_sandbox: boolean flag to control if tasks will be posted to sandbox instead of production system of Daemo
 
     """
 
-    def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=HOST,
-                 is_secure=True):
+    def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=None,
+                 is_secure=True, is_sandbox=False):
         
         log.info(msg="initializing client...")
         self.check_dependency(credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path"))
@@ -53,7 +54,14 @@ class DaemoClient:
             self.http_proto = "https://"
             self.websock_proto = "wss://"
 
-        self.host = host
+        if is_sandbox:
+            self.host = SANDBOX
+        else:
+            self.host = PRODUCTION
+
+        if host is not None:
+            self.host = host
+
         self.credentials_path = credentials_path
         self.rerun_key = rerun_key
         self.multi_threading = multi_threading
