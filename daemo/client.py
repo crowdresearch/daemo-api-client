@@ -47,7 +47,8 @@ class DaemoClient:
                  is_secure=True, is_sandbox=False, log_config=None):
 
         if log_config is None:
-            with open('logging.conf') as f:
+            logging_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logging.conf')
+            with open(logging_path) as f:
                 log_config = yaml.load(f)
         logging.config.dictConfig(log_config)
         
