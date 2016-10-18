@@ -31,5 +31,5 @@ class ClientProtocol(WebSocketClientProtocol):
     def onClose(self, wasClean, code, reason):
         log.debug("channel closed")
 
-        # if not wasClean:
-        #     log.error(reason)
+        if not wasClean:
+            log.error(reason)
