@@ -1,23 +1,18 @@
-import fcntl
 import json
 import logging.config
 import multiprocessing
 import os
 import signal
-import sys
-import threading
 from inspect import isfunction
 
-import requests
 import yaml
-from autobahn.twisted.websocket import connectWS
-from twisted.internet import reactor
 
-from daemo.client_factory import ClientFactory
+from daemo.api import ApiClient
 from daemo.constants import *
 from daemo.errors import Error
-from daemo.exceptions import ServerException, ClientException
-
+from daemo.storage import Store
+from daemo.utils import callback_thread, check_dependency, get_template_item_id, transform_task, transform_task_results
+from daemo.websockets import Channel
 
 log = logging.getLogger(__name__)
 
@@ -46,14 +41,21 @@ class DaemoClient:
     def __init__(self, credentials_path='credentials.json', rerun_key=None, multi_threading=False, host=None,
                  is_secure=True, is_sandbox=False, log_config=None):
 
+        # log using default logging config if no config provided
         if log_config is None:
             logging_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logging.conf')
+
             with open(logging_path) as f:
                 log_config = yaml.load(f)
+
         logging.config.dictConfig(log_config)
-        
+
         log.info(msg="initializing client...")
-        self.check_dependency(credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path"))
+
+        check_dependency(credentials_path is not None and len(credentials_path) > 0, Error.required("credentials_path"))
+        self.credentials_path = credentials_path
+        self.rerun_key = rerun_key
+        self.multi_threading = multi_threading
 
         self.http_proto = "http://"
         self.websock_proto = "ws://"
@@ -62,31 +64,19 @@ class DaemoClient:
             self.http_proto = "https://"
             self.websock_proto = "wss://"
 
+        self.host = PRODUCTION
+
         if is_sandbox:
             self.host = SANDBOX
-        else:
-            self.host = PRODUCTION
 
         if host is not None:
             self.host = host
 
-        self.credentials_path = credentials_path
-        self.rerun_key = rerun_key
-        self.multi_threading = multi_threading
+        self.api_client = ApiClient(self.credentials_path, self.host, self.http_proto)
 
-        self.client_id = None
-        self.access_token = None
-        self.refresh_token = None
+        self.store = Store()
 
-        self.ws_process = None
-
-        self.batches = []
-        self.tasks = {}
-        self.cache = {}
-
-        self.queue = multiprocessing.Queue()
-
-        self._initialize()
+        self._open_channel()
 
     def publish(self, project_key, tasks, approve, completed, mock_workers=None, stream=False):
         """
@@ -146,17 +136,18 @@ class DaemoClient:
         :param stream: a boolean value which controls whether worker response should be received as soon as each worker has submitted or wait for all of them to complete.
 
         """
-        log.debug(msg="publish function called...")
+        log.info(msg="publishing project...")
 
-        self.check_dependency(project_key is not None and len(project_key) > 0, Error.required("project_key"))
-        self.check_dependency(tasks is not None and len(tasks) >= 0, Error.required("tasks"))
-        self.check_dependency(isfunction(approve), Error.func_def_undefined("approve"))
-        self.check_dependency(isfunction(completed), Error.func_def_undefined("completed"))
+        check_dependency(project_key is not None and len(project_key) > 0, Error.required("project_key"))
+        check_dependency(tasks is not None and len(tasks) >= 0, Error.required("tasks"))
+        check_dependency(isfunction(approve), Error.func_def_undefined("approve"))
+        check_dependency(isfunction(completed), Error.func_def_undefined("completed"))
 
         if mock_workers is not None:
-            self.check_dependency(isfunction(mock_workers), Error.func_def_undefined("mock_workers"))
+            check_dependency(isfunction(mock_workers), Error.func_def_undefined("mock_workers"))
 
-        thread = threading.Thread(
+        thread = callback_thread(
+            name='publish',
             target=self._publish,
             kwargs=dict(
                 project_key=project_key,
@@ -194,14 +185,14 @@ class DaemoClient:
         :return: rating response
 
         """
-        log.debug(msg="rate function called")
+        log.info(msg="rating workers...")
         data = {
             "project_key": project_key,
             "ratings": ratings,
             "ignore_history": ignore_history
         }
 
-        response = self._post("/api/worker-requester-rating/boomerang-feedback/", data=json.dumps(data))
+        response = self.api_client.boomerang_feedback(data)
         return response
 
     def peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
@@ -216,17 +207,31 @@ class DaemoClient:
         :return: review response
 
         """
-        log.debug(msg="peer review function called...")
-        thread = threading.Thread(
-            target=self._peer_review,
-            kwargs=dict(
-                project_key=project_key,
-                worker_responses=worker_responses,
-                inter_task_review=inter_task_review,
-                review_completed=review_completed
-            )
+        log.info(msg="initiating peer review...")
+
+        check_dependency(project_key is not None and len(project_key) > 0, Error.required("project_key"))
+        check_dependency(worker_responses is not None and len(worker_responses) >= 0,
+                         Error.required("worker_responses"))
+        check_dependency(isfunction(review_completed), Error.func_def_undefined("review_completed"))
+
+        self._peer_review(
+            project_key=project_key,
+            worker_responses=worker_responses,
+            inter_task_review=inter_task_review,
+            review_completed=review_completed
         )
-        thread.start()
+
+        # thread = callback_thread(
+        #     name='peer review',
+        #     target=self._peer_review,
+        #     kwargs=dict(
+        #         project_key=project_key,
+        #         worker_responses=worker_responses,
+        #         inter_task_review=inter_task_review,
+        #         review_completed=review_completed
+        #     )
+        # )
+        # thread.start()
 
     def peer_review_and_rate(self, project_key, worker_responses, inter_task_review=False):
         """
@@ -240,39 +245,41 @@ class DaemoClient:
         :return: review response
         """
 
-        log.debug(msg="rate function called...")
-        thread = threading.Thread(
-            target=self._peer_review,
-            kwargs=dict(
-                project_key=project_key,
-                worker_responses=worker_responses,
-                inter_task_review=inter_task_review,
-                review_completed=self._review_completed
-            )
+        log.debug(msg="initiating peer review and rating...")
+
+        check_dependency(project_key is not None and len(project_key) > 0, Error.required("project_key"))
+        check_dependency(worker_responses is not None and len(worker_responses) >= 0,
+                         Error.required("worker_responses"))
+
+        self._peer_review(
+            project_key=project_key,
+            worker_responses=worker_responses,
+            inter_task_review=inter_task_review,
+            review_completed=self._review_completed
         )
-        thread.start()
 
-    def _initialize(self):
-        if self._credentials_exist():
-            self._load_tokens()
-        else:
-            self._persist_tokens()
-
-        self._refresh_token()
-
-        self._register_signals()
-
-        self._monitor_messages()
-
-        self._connect()
+        # thread = callback_thread(
+        #     name='peer review and rate',
+        #     target=self._peer_review,
+        #     kwargs=dict(
+        #         project_key=project_key,
+        #         worker_responses=worker_responses,
+        #         inter_task_review=inter_task_review,
+        #         review_completed=self._review_completed
+        #     )
+        # )
+        # thread.start()
 
     def _publish(self, project_key, tasks, approve, completed, stream, mock_workers, rerun_key):
+
         # change status of project to published if not already set
         log.info(msg="publishing project...")
-        project = self._publish_project(project_key)
+        project = self.api_client.publish_project(project_key)
 
-        log.info(msg="open [ %s%s/project-review/%s ] to preview project progress" % (
+        log.info(msg="open [ %s%s/project-review/%s ] to review project's progress" % (
             self.http_proto, self.host, project["id"]))
+
+        log.info(msg="press [ Ctrl + c ] to terminate...")
 
         new_tasks = self._create_tasks(project_key=project_key,
                                        tasks=tasks,
@@ -283,7 +290,8 @@ class DaemoClient:
 
         if new_tasks is not None and len(new_tasks) > 0 and mock_workers is not None:
             for new_task in new_tasks:
-                thread = threading.Thread(
+                thread = callback_thread(
+                    name='mock',
                     target=self._mock_task,
                     kwargs=dict(
                         task_id=new_task["id"],
@@ -293,17 +301,17 @@ class DaemoClient:
                 thread.start()
 
     def _create_tasks(self, project_key, tasks, approve, completed, stream, rerun_key, count):
-        log.info(msg="adding tasks...")
+        log.info(msg="syncing tasks...")
 
-        tasks = self._add_data(project_key, tasks, rerun_key)
+        data = self.api_client.add_data(project_key, tasks, rerun_key)
+        tasks = data["tasks"]
+
         self._create_batch(project_key, tasks, approve, completed, stream, count)
 
         return tasks
 
-    def _create_batch(self, project_key, data, approve, completed, stream, count):
-        tasks = data["tasks"]
-
-        self.batches.append({
+    def _create_batch(self, project_key, tasks, approve, completed, stream, count):
+        self.store.batches.append({
             "project_key": project_key,
             "tasks": tasks,
             "approve": approve,
@@ -316,31 +324,62 @@ class DaemoClient:
             "aggregated_data": []
         })
 
-        batch_index = len(self.batches) - 1
+        batch_index = self.store.batch_count() - 1
 
         for task in tasks:
-            self._map_task(task, batch_index)
+            check_dependency("id" in task and task["id"] is not None, "Invalid task")
+            self.store.map_task(task, batch_index)
 
             task_id = task["id"]
 
             if "task_workers" in task and len(task["task_workers"]) > 0:
                 for taskworker in task["task_workers"]:
-                    taskworker_id = taskworker["id"]
+                    self._replay_task(project_key, task_id, taskworker)
 
-                    self._replay_task(project_key, task_id, taskworker_id, taskworker)
+    def _peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
+        task_workers = [response['id'] for response in worker_responses]
 
-    def _replay_task(self, project_key, task_id, taskworker_id, taskworker):
+        tasks = {}
+        for response in worker_responses:
+            if not response["task_id"] in tasks:
+                tasks[response["task_id"]] = []
+
+            if not response["worker_id"] in tasks[response["task_id"]]:
+                tasks[response["task_id"]].append(response["worker_id"])
+
+        unique_workers = any([tasks[task_id] > 1 for task_id in tasks.keys()])
+
+        check_dependency(len(task_workers) > 1, "Peer review requires more than 1 worker responses")
+        check_dependency(unique_workers, "Peer review requires more than 1 worker to complete the tasks. All tasks were completed by same worker.")
+
+        response = self.api_client.launch_peer_review(task_workers, inter_task_review, self.rerun_key)
+
+        match_group_id = str(response['match_group_id'])
+
+        if match_group_id not in self.store.cache:
+            self.store.cache[match_group_id] = {}
+
+        if review_completed is not None:
+            self.store.cache[match_group_id]['project_key'] = project_key
+            self.store.cache[match_group_id]['review_completed'] = review_completed
+            self.store.cache[match_group_id]['is_complete'] = False
+
+            if "scores" in response and len(response["scores"]) > 0:
+                self._replay_review(project_key, match_group_id, response["scores"])
+
+    def _replay_task(self, project_key, task_id, task_worker):
         # re-queue submitted results
-        log.info(msg="adding previous worker submissions...")
+        log.info(msg="syncing previous submissions...")
+
         payload = json.dumps({
             "type": "REGULAR",
             "payload": {
-                "taskworker_id": taskworker_id,
+                "taskworker_id": task_worker["id"],
                 "task_id": task_id,
-                "worker_id": taskworker["worker"],
+                "worker_id": task_worker["worker"],
                 "project_key": project_key,
-                "project_id": taskworker["project_data"]["id"],
-                "taskworker": taskworker
+                "project_id": task_worker["project_data"]["id"],
+                "taskworker": task_worker
             }
         })
 
@@ -349,23 +388,22 @@ class DaemoClient:
             "isBinary": False
         })
 
-    def _map_task(self, task, batch_index):
-        self.check_dependency("id" in task and task["id"] is not None, "Invalid task")
-
-        task_id = task["id"]
-
-        self.batches[batch_index]["status"][task_id] = False
-
-        if task_id not in self.batches[batch_index]["submissions"]:
-            self.batches[batch_index]["submissions"][task_id] = 0
-
-        if task_id in self.tasks:
-            self.tasks[task_id]["batches"].append(batch_index)
-        else:
-            self.tasks[task_id] = {
-                "batches": [batch_index],
-                "task_id": task_id,
+    def _replay_review(self, project_key, match_group_id, scores):
+        # re-queue submitted results
+        log.info(msg="syncing previous peer review submissions...")
+        payload = json.dumps({
+            "type": "REVIEW",
+            "payload": {
+                "project_key": project_key,
+                "match_group_id": match_group_id,
+                "scores": scores
             }
+        })
+
+        self.queue.put({
+            "payload": payload,
+            "isBinary": False
+        })
 
     def _mock_task(self, task_id, mock_workers):
         log.info(msg="mocking workers...")
@@ -377,161 +415,27 @@ class DaemoClient:
 
             responses = mock_workers(task, num_workers)
 
-            self.check_dependency(responses is not None and len(
+            check_dependency(responses is not None and len(
                 responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
-                len(responses), num_workers))
+                                 len(responses), num_workers))
 
             results = [
                 {
                     "items": [
                         {
                             "result": field["value"],
-                            "template_item": self._get_template_item_id(field["name"],
-                                                                        task["template"]["fields"])
+                            "template_item": get_template_item_id(field["name"],
+                                                                  task["template"]["fields"])
                         } for field in response]
                 } for response in responses]
 
-            self._submit_results(
+            self.api_client.submit_results(
                 task["id"],
                 results
             )
 
-    def _peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
-        task_workers = [response['id'] for response in worker_responses]
-
-        response = self._launch_peer_review(task_workers, inter_task_review)
-
-        match_group_id = str(response['match_group_id'])
-
-        if match_group_id not in self.cache:
-            self.cache[match_group_id] = {}
-
-        if review_completed is not None:
-            self.cache[match_group_id]['project_key'] = project_key
-            self.cache[match_group_id]['review_completed'] = review_completed
-
-            if "scores" in response and len(response["scores"]) > 0:
-                self._replay_review(project_key, match_group_id, response["scores"])
-
-    def _replay_review(self, project_key, match_group_id, scores):
-        # re-queue submitted results
-        log.info(msg="adding previous peer review submissions...")
-        payload = json.dumps({
-            "type": "REVIEW",
-            "payload": {
-                "project_key": project_key,
-                "match_group_id": match_group_id,
-                "scores": scores,
-                "is_done": True
-            }
-        })
-
-        self.queue.put({
-            "payload": payload,
-            "isBinary": False
-        })
-
-    def _get_template_item_id(self, template_item_name, template_items):
-        """
-        Find template item by name from list of template items in a task
-
-        :param template_item_name:
-        :param template_items:
-        :return:
-        """
-        fields = filter(lambda x: x["name"] == template_item_name, template_items)
-
-        if fields is not None and len(fields) > 0:
-            return fields[0]["id"]
-        return -1
-
-    def _is_task_complete(self, batch_index, task_id):
-        task_status = self._fetch_task_status(task_id)
-
-        is_done = task_status["is_done"]
-        expected = int(task_status["expected"])
-
-        # compare result counts too
-        log.debug(msg="is task complete?")
-        log.debug(msg="Expected = %d, Result = %d" % (expected, self.batches[batch_index]["submissions"][task_id]))
-
-        return is_done and expected <= self.batches[batch_index]["submissions"][task_id]
-
-    def _mark_task_completed(self, batch_index, task_id):
-        log.debug(msg="marking task %d complete?" % task_id)
-        if task_id in self.batches[batch_index]["status"]:
-            self.batches[batch_index]["status"][task_id] = True
-
-    def _is_batch_complete(self, batch_index):
-        return all(self.batches[batch_index]["status"].values())
-
-    def _mark_batch_completed(self, batch_index):
-        log.debug(msg="marking batch %d complete?" % batch_index)
-        self.batches[batch_index]["is_complete"] = True
-
-    def _all_batches_complete(self):
-        return all([batch["is_complete"] for batch in self.batches])
-
-    def _stop(self):
-        log.info(msg="disconnecting channels...")
-        log.info(msg="press [Ctrl+C] to terminate...")
-        self.queue.put(None)
-        reactor.callFromThread(reactor.stop)
-
-    def _handler(self, signum, frame):
-        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
-            self.queue.put(None)
-
-            if reactor.running:
-                reactor.callFromThread(reactor.stop)
-            else:
-                sys.exit(0)
-
-    def _register_signals(self):
-        thread = threading.Thread(target=signal.pause)
-        thread.start()
-
-    def _aggregate(self, batch_index, task_id, task_data):
-        self.batches[batch_index]["aggregated_data"].append({
-            "task_id": task_id,
-            "data": task_data
-        })
-
-    def _get_aggregated(self, batch_index):
-        return [x["data"] for x in self.batches[batch_index]["aggregated_data"]]
-
-    # Web-socket Communication =========================================================================================
-
-    def _connect(self):
-        signal.signal(signal.SIGINT, self._handler)
-
-        self.ws_process = multiprocessing.Process(
-            target=self._create_websocket,
-            args=(self.queue,),
-            kwargs=dict(access_token=self.access_token, host=self.host)
-        )
-        self.ws_process.start()
-
-    def _create_websocket(self, queue, access_token, host):
-        log.debug(msg="open websocket connection")
-
-        headers = {
-            AUTHORIZATION: TOKEN % access_token
-        }
-
-        self.ws = ClientFactory(self.websock_proto + host + WS_BOT_SUBSCRIBE_URL, headers=headers)
-        # self.ws.protocol = ClientProtocol
-        self.ws.queue = queue
-        connectWS(self.ws)
-        reactor.run()
-
-    def _monitor_messages(self):
-        threading.Thread(
-            target=self._read_message
-        ).start()
-
     def _read_message(self):
-        while True:
+        while self.queue is not None:
             data = self.queue.get(block=True)
 
             # to stop reading, None is passed to the queue by server/client
@@ -543,7 +447,8 @@ class DaemoClient:
             if not data["isBinary"]:
                 log.debug("<<<{}>>>".format(data["payload"].decode("utf8")))
 
-            thread = threading.Thread(
+            thread = callback_thread(
+                name='message processor',
                 target=self._process_message,
                 kwargs=dict(
                     payload=data["payload"],
@@ -565,465 +470,175 @@ class DaemoClient:
             payload = response.get('payload')
 
             if type == "REVIEW":
-                return self._process_review_message(payload)
+                return self._process_review(payload)
 
-            taskworker_id = int(payload.get("taskworker_id", 0))
-            task_id = int(payload.get("task_id", 0))
-            worker_id = int(payload.get("worker_id", 0))
-            project_key = payload.get("project_key", None)
-            taskworker = payload.get("taskworker", None)
+            if type == "REGULAR":
+                return self._process_task(payload)
 
-            # ignore data pushed via GUI (has no batch info)
-            if task_id in self.tasks:
-                self.check_dependency(taskworker_id > 0, Error.required("taskworker_id"))
-                self.check_dependency(task_id > 0, Error.required("task_id"))
-                self.check_dependency(project_key is not None, Error.required("project_key"))
+    def _process_task(self, payload):
+        taskworker_id = int(payload.get("taskworker_id", 0))
+        task_id = int(payload.get("task_id", 0))
+        worker_id = int(payload.get("worker_id", 0))
+        project_key = payload.get("project_key", None)
+        taskworker = payload.get("taskworker", None)
 
-                batch_indices = self.tasks[task_id]["batches"]
+        if task_id in self.store.tasks:
+            check_dependency(taskworker_id > 0, Error.required("taskworker_id"))
+            check_dependency(task_id > 0, Error.required("task_id"))
+            check_dependency(project_key is not None, Error.required("project_key"))
 
-                if taskworker is None:
-                    task_data = self._get_task_results_by_taskworker_id(taskworker_id)
+            batch_indices = self.store.tasks[task_id]["batches"]
+
+            if taskworker is None:
+                task_data = self.api_client.get_task_results_by_taskworker_id(taskworker_id)
+                task_data = transform_task_results(task_data)
+            else:
+                task_data = transform_task_results(taskworker)
+
+            for batch_index in batch_indices:
+                check_dependency(batch_index < len(self.store.batches) \
+                                 and self.store.batches[batch_index] is not None, "Missing batch for task")
+
+                check_dependency(task_data is not None, "No worker responses for task %d found" % task_id)
+
+                config = self.store.batches[batch_index]
+
+                task_data["accept"] = False
+                approve = config["approve"]
+                completed = config["completed"]
+                stream = config["stream"]
+
+                # increment count to track completion
+                self.store.batches[batch_index]["submissions"][task_id] += 1
+
+                if stream:
+                    self._stream_response(batch_index, task_id, task_data, approve, completed)
                 else:
-                    task_data = self._transform_task_results(taskworker)
+                    self._aggregate_responses(batch_index, task_id, task_data, approve, completed)
 
-                for batch_index in batch_indices:
-                    self.check_dependency(batch_index < len(self.batches) \
-                           and self.batches[batch_index] is not None, "Missing batch for task")
+                self.check_for_pending_tasks_reviews()
+        else:
+            log.debug("No corresponding task found. Worker response ignored.")
 
-                    self.check_dependency(task_data is not None, "No worker responses for the task found")
+    def _process_review(self, payload):
+        match_group_id = str(payload["match_group_id"])
 
-                    config = self.batches[batch_index]
+        if "scores" in payload and len(payload["scores"]) > 0:
+            ratings = payload["scores"]
+        else:
+            ratings = self.api_client.get_trueskill_scores(match_group_id)
 
-                    task_data["accept"] = False
-                    approve = config["approve"]
-                    completed = config["completed"]
-                    stream = config["stream"]
+        if match_group_id in self.store.cache:
+            project_key = self.store.cache[match_group_id]['project_key']
+            review_completed = self.store.cache[match_group_id]['review_completed']
+            review_completed(project_key, ratings)
+            self.store.cache[match_group_id]['is_complete'] = True
 
-                    # increment count to track completion
-                    self.batches[batch_index]["submissions"][task_id] += 1
+            self.check_for_pending_tasks_reviews()
 
-                    if stream:
-                        self._stream_response(batch_index, task_id, task_data, approve, completed)
-                    else:
-                        self._aggregate_responses(batch_index, task_id, task_data, approve, completed)
-
-                    if self._all_batches_complete():
-                        log.debug(msg="are all batches done? yes")
-                        # self._stop()
-                    else:
-                        log.debug("are all batches done? no")
-            else:
-                log.debug("No corresponding task found. Message ignored.")
-
-    def _process_review_message(self, payload):
-        if payload['is_done']:
-            match_group_id = str(payload["match_group_id"])
-
-            if "scores" in payload and len(payload["scores"]) > 0:
-                ratings = payload["scores"]
-            else:
-                ratings = self._get_trueskill_scores(match_group_id)
-
-            if match_group_id in self.cache:
-                project_key = self.cache[match_group_id]['project_key']
-                review_completed = self.cache[match_group_id]['review_completed']
-                review_completed(project_key, ratings)
+    def check_for_pending_tasks_reviews(self):
+        if all([self.store.all_batches_complete(), self.store.all_reviews_complete()]):
+            log.debug(msg="all tasks and reviews complete.")
+            self._stop()
 
     def _review_completed(self, project_key, ratings, ignore_history=True):
         self.rate(project_key, ratings, ignore_history=ignore_history)
 
     def _stream_response(self, batch_index, task_id, task_data, approve, completed):
-        log.debug(msg="streaming responses...")
+        log.info(msg="streaming responses...")
 
-        log.debug(msg="calling approved callback...")
+        log.info(msg="calling approve callback...")
 
         if approve([task_data]):
             task_data["accept"] = True
-            log.debug(msg="task approved.")
+            log.info(msg="task %d approved" % task_id)
         else:
-            log.debug(msg="task rejected.")
+            log.info(msg="task %d rejected" % task_id)
 
-        self._update_approval_status(task_data)
+        self.api_client.update_approval_status(task_data)
 
         if task_data["accept"]:
-            log.debug(msg="calling completed callback")
+            log.info(msg="calling completed callback")
             completed([task_data])
 
-        is_done = self._is_task_complete(batch_index, task_id)
-        log.debug(msg="is task %d done? %s" % (task_id, is_done))
+        is_done = self.store.is_task_complete(batch_index, task_id)
 
         if is_done:
-            self._mark_task_completed(batch_index, task_id)
+            self.store.mark_task_completed(batch_index, task_id)
 
     def _aggregate_responses(self, batch_index, task_id, task_data, approve, completed):
-        log.debug(msg="aggregating responses...")
+        log.info(msg="aggregating responses...")
 
         # store it for aggregation (stream = False)
-        self._aggregate(batch_index, task_id, task_data)
+        self.store.aggregate(batch_index, task_id, task_data)
 
-        is_done = self._is_task_complete(batch_index, task_id)
-        # log.debug(msg="is task %d done? %s" % (task_id, is_done))
-
-        if is_done:
-            self._mark_task_completed(batch_index, task_id)
-
-        is_done = self._is_batch_complete(batch_index)
+        is_done = self.store.is_task_complete(batch_index, task_id)
 
         if is_done:
-            self._mark_batch_completed(batch_index)
+            self.store.mark_task_completed(batch_index, task_id)
 
-            log.debug(msg="is batch done? True")
-            tasks_data = self._get_aggregated(batch_index)
+            is_done = self.store.is_batch_complete(batch_index)
 
-            log.debug(msg="calling approved callback...")
-            approvals = approve(tasks_data)
+            if is_done:
+                self.store.mark_batch_completed(batch_index)
 
-            tasks_approvals = zip(tasks_data, approvals)
+                tasks_data = self.store.get_aggregated(batch_index)
 
-            for task_approval in tasks_approvals:
-                task_data = task_approval[0]
-                approval = task_approval[1]
+                log.info(msg="calling approve callback...")
+                approvals = approve(tasks_data)
 
-                task_data["accept"] = approval
+                tasks_approvals = zip(tasks_data, approvals)
 
-                self._update_approval_status(task_data)
+                for task_approval in tasks_approvals:
+                    task_data = task_approval[0]
+                    approval = task_approval[1]
 
-            approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+                    task_data["accept"] = approval
 
-            log.debug(msg="calling completed callback...")
-            completed(approved_tasks)
-        else:
-            log.debug(msg="is batch done? False")
+                    if approval:
+                        log.info(msg="task %d approved" % task_data.get("id"))
+                    else:
+                        log.info(msg="task %d rejected" % task_data.get("id"))
 
-    # Backend API ======================================================================================================
+                    self.api_client.update_approval_status(task_data)
+
+                approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+
+                log.info(msg="calling completed callback...")
+                completed(approved_tasks)
 
     def _fetch_task(self, task_id):
-        response = self._get(API.task % task_id, data=json.dumps({}))
-        self.raise_if_error(response)
+        data = self.api_client.fetch_task(task_id)
+        return transform_task(data)
 
-        data = response.json()
+    def _open_channel(self):
+        # shared queue between main process and channel for message passing
+        self.queue = multiprocessing.Queue()
 
-        fields = []
+        # this thread reads message received in the queue via channel
+        thread = callback_thread(name='message reader', target=self._read_message)
+        thread.start()
 
-        if "items" in data["template"]:
-            for item in data["template"]["items"]:
-                if item["role"] == "input":
-                    options = []
+        # this thread waits for kill signal for channel
+        thread = callback_thread(name='signal monitor', target=signal.pause)
+        thread.start()
 
-                    if "choices" in item["aux_attributes"]:
-                        for option in item["aux_attributes"]["choices"]:
-                            options.append({
-                                "position": option["position"],
-                                "value": option["value"],
-                            })
+        signal.signal(signal.SIGINT, self._handler)
 
-                    fields.append({
-                        "id": item["id"],
-                        "name": item["name"],
-                        "type": item["type"],
-                        "position": item["position"],
-                        "question": item["aux_attributes"]["question"]["value"],
-                        "options": options
-                    })
+        access_token = self.api_client.get_auth_token()
+        subscribe_url = self.websock_proto + self.host + self.api_client.route.subscribe
 
-        task = {
-            "id": data["id"],
-            "project": {
-                "id": data["project_data"]["id"],
-                "key": data["project_data"]["hash_id"],
-                "name": data["project_data"]["name"],
-                "num_workers": data["project_data"]["repetition"],
-            },
-            "template": {
-                "id": data["template"]["id"],
-                "fields": fields
-            }
-        }
+        self.channel = Channel(self.queue, access_token, subscribe_url)
+        self.channel.start()
 
-        return task
+    def _handler(self, signum, frame):
+        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT] and os.getpid() == self.channel.get_pid():
+            self.channel.stop()
 
-    def _fetch_config(self, rerun_key):
-        response = self._get(API.rerun_config % rerun_key, data=json.dumps({}))
-        self.raise_if_error(response)
+            if self.queue is not None:
+                self.queue.put(None)
+                self.queue = None
 
-        return response.json()
-
-    def _publish_project(self, project_id):
-        response = self._post(API.publish_project % project_id, data=json.dumps({}))
-        self.raise_if_error("publish project", response)
-
-        return response.json()
-
-    def _add_data(self, project_key, tasks, rerun_key):
-        response = self._post(API.add_tasks % project_key, data=json.dumps({
-            "tasks": tasks,
-            "rerun_key": rerun_key
-        }))
-
-        self.raise_if_error("publish project", response)
-
-        return response.json()
-
-    # def _get_task_results_by_task_id(self, task_id):
-    #     response = self._get(API.task_results % task_id, data=json.dumps({}))
-    #     self.raise_if_error(response)
-    #
-    #     return response.json()
-
-    def _get_task_results_by_taskworker_id(self, taskworker_id):
-        try:
-            response = self._get(API.task_worker_results % taskworker_id, data={})
-            self.raise_if_error("process result", response)
-            results = response.json()
-
-            return self._transform_task_results(results)
-        except Exception as e:
-            return None
-
-    def _transform_task_results(self, data):
-        fields = {}
-        for result in data.get("results"):
-            fields[result["key"]] = result["result"]
-
-        data["fields"] = fields
-        del data["results"]
-
-        data["task_id"] = data["task"]
-        data["worker_id"] = data["worker"]
-
-        return data
-
-    def _update_approval_status(self, task):
-        log.debug(msg="updating status for task %d" % task["id"])
-        data = {
-            "status": STATUS_ACCEPTED if task["accept"] else STATUS_REJECTED,
-            "workers": [task["id"]]
-        }
-
-        response = self._post(API.update_task_status, data=json.dumps(data))
-        self.raise_if_error("task approval", response)
-
-        return response.json()
-
-    def _fetch_task_status(self, task_id):
-        response = self._get(API.task_status % task_id, data={})
-        self.raise_if_error("task status", response)
-
-        task_data = response.json()
-        return task_data
-
-    def _submit_results(self, task_id, results):
-        data = {
-            "task_id": task_id,
-            "results": results
-        }
-
-        response = self._post(API.mock_results, data=json.dumps(data))
-        self.raise_if_error("result submission", response)
-        return response.json()
-
-    def _launch_peer_review(self, task_workers, inter_task_review):
-        data = {
-            "task_workers": task_workers,
-            "inter_task_review": inter_task_review,
-            "rerun_key": self.rerun_key
-        }
-
-        response = self._post(API.peer_review, data=json.dumps(data))
-        self.raise_if_error("peer review", response)
-        return response.json()
-
-    def _get_trueskill_scores(self, match_group_id):
-        response = self._get(API.true_skill_score.format(match_group_id))
-        self.raise_if_error("rating", response)
-
-        return response.json()
-
-    # Authentication ===================================================================================================
-
-    def _is_auth_error(self, response):
-        try:
-            response = response.json()
-        except Exception as e:
-            pass
-
-        return response is not None and isinstance(response, dict) and response.get("detail",
-                                                                                    "") == CREDENTIALS_NOT_PROVIDED
-
-    def _credentials_exist(self):
-        return os.path.isfile(self.credentials_path)
-
-    def _load_tokens(self):
-        with open(self.credentials_path, "r") as infile:
-            data = json.load(infile)
-
-            self.check_dependency(data[CLIENT_ID] is not None and len(data[CLIENT_ID]) > 0, Error.required(CLIENT_ID))
-            self.check_dependency(data[ACCESS_TOKEN] is not None and len(data[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN))
-            self.check_dependency(data[REFRESH_TOKEN] is not None and len(data[REFRESH_TOKEN]) > 0, Error.required(REFRESH_TOKEN))
-
-            self.client_id = data[CLIENT_ID]
-            self.access_token = data[ACCESS_TOKEN]
-            self.refresh_token = data[REFRESH_TOKEN]
-
-    def _persist_tokens(self):
-        with open(self.credentials_path, "w") as outfile:
-            fcntl.flock(outfile.fileno(), fcntl.LOCK_EX)
-
-            data = {
-                CLIENT_ID: self.client_id,
-                ACCESS_TOKEN: self.access_token,
-                REFRESH_TOKEN: self.refresh_token
-            }
-            json.dump(data, outfile)
-
-    def _refresh_token(self):
-        self._load_tokens()
-
-        data = {
-            CLIENT_ID: self.client_id,
-            GRANT_TYPE: REFRESH_TOKEN,
-            REFRESH_TOKEN: self.refresh_token
-        }
-
-        response = self._post(OAUTH_TOKEN_URL, data=data, is_json=False, authorization=False)
-
-        if "error" in response.json():
-            raise ServerException("auth", "Error refreshing access token. Please retry again.", 400)
-        else:
-            response = response.json()
-
-            self.check_dependency(response[ACCESS_TOKEN] is not None and len(response[ACCESS_TOKEN]) > 0, Error.required(ACCESS_TOKEN))
-            self.check_dependency(response[REFRESH_TOKEN] is not None and len(response[REFRESH_TOKEN]) > 0, Error.required(
-                REFRESH_TOKEN))
-
-            self.access_token = response.get(ACCESS_TOKEN)
-            self.refresh_token = response.get(REFRESH_TOKEN)
-
-            self._persist_tokens()
-
-    # REST API =========================================================================================================
-
-    def _get(self, relative_url, data=None, headers=None, is_json=True, authorization=True):
-        session = requests.session()
-        base_url = self.http_proto + self.host
-
-        if headers is None:
-            headers = dict()
-
-        if authorization:
-            headers.update({
-                AUTHORIZATION: TOKEN % self.access_token,
-            })
-
-        if is_json:
-            headers.update({
-                CONTENT_TYPE: CONTENT_JSON
-            })
-
-        response = None
-        try:
-            response = session.get(base_url + relative_url, data=data, headers=headers)
-        except Exception, e:
-            self.log_exit(e)
-
-        if self._is_auth_error(response):
-            self._refresh_token()
-
-            if authorization:
-                headers.update({
-                    AUTHORIZATION: TOKEN % self.access_token
-                })
-
-            response = session.get(base_url + relative_url, data=data, headers=headers)
-
-        return response
-
-    def _post(self, relative_url, data, headers=None, is_json=True, authorization=True):
-        session = requests.session()
-        base_url = self.http_proto + self.host
-
-        if headers is None:
-            headers = dict()
-
-        if authorization:
-            headers.update({
-                AUTHORIZATION: TOKEN % self.access_token,
-            })
-
-        if is_json:
-            headers.update({
-                CONTENT_TYPE: CONTENT_JSON
-            })
-
-        response = None
-        try:
-            response = session.post(base_url + relative_url, data=data, headers=headers)
-        except Exception, e:
-            self.log_exit(e)
-
-        if self._is_auth_error(response):
-            self._refresh_token()
-
-            if authorization:
-                headers.update({
-                    AUTHORIZATION: TOKEN % self.access_token
-                })
-
-            response = session.post(base_url + relative_url, data=data, headers=headers)
-
-        return response
-
-    def _put(self, relative_url, data, headers=None, is_json=True, authorization=True):
-        session = requests.session()
-
-        base_url = self.http_proto + self.host
-
-        if headers is None:
-            headers = dict()
-
-        if authorization:
-            headers.update({
-                AUTHORIZATION: TOKEN % self.access_token,
-            })
-
-        if is_json:
-            headers.update({
-                CONTENT_TYPE: CONTENT_JSON
-            })
-
-        response = None
-        try:
-            response = session.put(base_url + relative_url, data=data, headers=headers)
-        except Exception, e:
-            self.log_exit(e)
-
-        if self._is_auth_error(response):
-            self._refresh_token()
-
-            if authorization:
-                headers.update({
-                    AUTHORIZATION: TOKEN % self.access_token
-                })
-
-            response = session.put(base_url + relative_url, data=data, headers=headers)
-
-        return response
-
-    def check_dependency(self, condition, message):
-        try:
-            if not condition:
-                raise ClientException(message)
-        except Exception, e:
-            self.log_exit(e)
-
-    def raise_if_error(self, context, response):
-        try:
-            if 400 <= response.status_code < 600:
-                raise ServerException(context, response.status_code, response.text)
-        except Exception, e:
-            self.log_exit(e)
-
-    def log_exit(self, e):
-        debug = logging.getLogger().isEnabledFor(logging.DEBUG)
-        log.error(e, exc_info=debug)
-        exit()
+    def _stop(self):
+        log.info(msg="disconnecting...")
+        os.kill(self.channel.get_pid(), signal.SIGINT)

@@ -1,33 +1,58 @@
 import logging
+import threading
+import time
+from multiprocessing import Process
 
-from autobahn.twisted.websocket import WebSocketClientProtocol
+from autobahn.twisted.websocket import connectWS
 
-from daemo.errors import Error
+from daemo.client_factory import ClientFactory
+from daemo.protocol import ClientProtocol
 
 log = logging.getLogger("daemo.client")
 
 
-class ClientProtocol(WebSocketClientProtocol):
-    def onConnect(self, response):
-        log.info("channel connected")
-        self.factory.resetDelay()
+class Channel(Process):
+    factory = None
+    connector = None
+    queue = None
+    state = 0
 
-    def onOpen(self):
-        log.info("channel opened")
+    def __init__(self, queue, access_token, url):
+        super(Channel, self).__init__()
+        self.queue = queue
 
-        assert hasattr(self.factory, "queue") and self.factory.queue is not None, \
-            Error.required("queue")
+        headers = {
+            "Authorization": "Bearer %s" % access_token
+        }
 
-    def onMessage(self, payload, isBinary):
-        self.factory.queue.put({
-            "payload": payload,
-            "isBinary": isBinary
-        })
+        self.factory = ClientFactory(url, headers=headers)
+        self.factory.protocol = ClientProtocol
+        self.factory.queue = queue
+        self.lock = threading.Lock()
 
-    def onSend(self, data):
-        self.sendMessage(data.encode("utf8"))
-        log.debug("<<<{}>>>".format(data))
+    def get_pid(self):
+        return self.pid
 
-    def onClose(self, wasClean, code, reason):
-        log.debug("channel closed")
-        log.debug(reason)
+    def return_name(self):
+        return "%s" % self.name
+
+    def run(self):
+        log.debug(msg="opening channel...")
+
+        self.connector = connectWS(self.factory)
+        self.state = 1
+
+        self.connector.reactor.run()
+
+    def stop(self):
+        log.info(msg="closing channel...")
+
+        if self.connector.reactor.running:
+            self.connector.transport.protocol.sendClose(None)
+
+        time.sleep(1)
+
+        with self.lock:
+            if self.state > 0:
+                self.state = 0
+                self.connector.reactor.stop()

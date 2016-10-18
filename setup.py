@@ -11,8 +11,7 @@ if sys.version_info < (2, 7):
 
 install_requires = [
     'requests==2.11.1',
-    'autobahn==0.16.0',
-    'twisted==16.4.0',
+    'autobahn[twisted]==0.16.0',
     'pyOpenSSL==16.1.0',
     'service_identity==16.0.0',
     'pyyaml==3.12',
@@ -21,7 +20,7 @@ install_requires = [
 
 setup(
     name='daemo-api-client',
-    version='1.0.7',
+    version='1.0.8',
     packages=find_packages(exclude=['samples']),
     package_data={'daemo': ['logging.conf']},
     install_requires=install_requires,

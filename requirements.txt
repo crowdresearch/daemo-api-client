@@ -1,6 +1,5 @@
-autobahn==0.16.0
+autobahn[twisted]==0.16.0
 requests==2.11.1
-twisted==16.4.0
 pyOpenSSL==16.1.0
 service_identity==16.0.0
 rainbow_logging_handler==2.2.2
