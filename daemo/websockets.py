@@ -30,15 +30,11 @@ class Channel(Process):
         self.factory.queue = queue
         self.lock = threading.Lock()
 
-    def get_pid(self):
-        return self.pid
-
     def return_name(self):
         return "%s" % self.name
 
     def run(self):
         log.debug(msg="opening channel...")
-
         self.connector = connectWS(self.factory)
         self.state = 1
 
@@ -47,10 +43,10 @@ class Channel(Process):
     def stop(self):
         log.info(msg="closing channel...")
 
-        if self.connector.reactor.running:
-            self.connector.transport.protocol.sendClose(None)
+        # self.connector.disconnect()
+        self.connector.transport.protocol.sendClose(None)
 
-        time.sleep(1)
+        time.sleep(2)
 
         with self.lock:
             if self.state > 0:
