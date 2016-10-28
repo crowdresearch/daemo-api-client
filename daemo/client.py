@@ -636,7 +636,7 @@ class DaemoClient:
         self.channel.start()
 
     def _handler(self, signum, frame):
-        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT] and os.getpid() == self.channel.get_pid():
+        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT] and os.getpid() == self.channel.pid:
             self.channel.stop()
 
             if self.queue is not None:
