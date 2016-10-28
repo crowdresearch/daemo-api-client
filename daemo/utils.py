@@ -120,3 +120,14 @@ def transform_task_results(data):
     data["worker_id"] = data["worker"]
 
     return data
+
+
+def remove_duplicates(list_objects):
+    uniques = []
+    seen = set()
+    for x in list_objects:
+        t = tuple(x.items())
+        if t not in seen:
+            uniques.append(x)
+            seen.add(t)
+    return uniques

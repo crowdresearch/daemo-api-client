@@ -11,7 +11,8 @@ from daemo.api import ApiClient
 from daemo.constants import *
 from daemo.errors import Error
 from daemo.storage import Store
-from daemo.utils import callback_thread, check_dependency, get_template_item_id, transform_task, transform_task_results
+from daemo.utils import callback_thread, check_dependency, get_template_item_id, transform_task, transform_task_results, \
+    remove_duplicates
 from daemo.websockets import Channel
 
 log = logging.getLogger(__name__)
@@ -186,9 +187,13 @@ class DaemoClient:
 
         """
         log.info(msg="rating workers...")
+
+        # remove duplicates
+        unique_ratings = remove_duplicates(ratings)
+
         data = {
             "project_key": project_key,
-            "ratings": ratings,
+            "ratings": unique_ratings,
             "ignore_history": ignore_history
         }
 
@@ -273,7 +278,6 @@ class DaemoClient:
     def _publish(self, project_key, tasks, approve, completed, stream, mock_workers, rerun_key):
 
         # change status of project to published if not already set
-        log.info(msg="publishing project...")
         project = self.api_client.publish_project(project_key)
 
         log.info(msg="open [ %s%s/project-review/%s ] to review project's progress" % (
@@ -641,4 +645,4 @@ class DaemoClient:
 
     def _stop(self):
         log.info(msg="disconnecting...")
-        os.kill(self.channel.get_pid(), signal.SIGINT)
+        os.kill(int(self.channel.pid), signal.SIGINT)
