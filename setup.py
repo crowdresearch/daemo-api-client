@@ -20,7 +20,7 @@ install_requires = [
 
 setup(
     name='daemo-api-client',
-    version='1.0.9',
+    version='1.0.10',
     packages=find_packages(exclude=['samples']),
     package_data={'daemo': ['logging.conf']},
     install_requires=install_requires,

@@ -48,7 +48,7 @@ class ApiClient:
             return None
 
     def update_approval_status(self, task):
-        log.debug(msg="updating status for task %d" % task["id"])
+        log.debug(msg="updating status for task %d" % task["task_id"])
 
         STATUS_ACCEPTED = 3
         STATUS_REJECTED = 4
