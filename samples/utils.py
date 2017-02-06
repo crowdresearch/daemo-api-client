@@ -1,3 +1,4 @@
+import os
 import time
 from Queue import Queue
 from datetime import datetime
@@ -9,12 +10,12 @@ from twitter import *
 from daemo.errors import Error
 
 TOP_STORIES_URL = 'https://api.nytimes.com/svc/topstories/v2/home.json?api-key=%s'
-NYT_API_KEY = ''
+NYT_API_KEY = os.environ.get('NYT_API_KEY', '')
 
-TW_CONSUMER_KEY = ''
-TW_CONSUMER_SECRET = ''
-TW_ACCESS_TOKEN = ''
-TW_ACCESS_TOKEN_SECRET = ''
+TW_CONSUMER_KEY = os.environ.get('TW_CONSUMER_KEY', '')
+TW_CONSUMER_SECRET = os.environ.get('TW_CONSUMER_SECRET', '')
+TW_ACCESS_TOKEN = os.environ.get('TW_ACCESS_TOKEN', '')
+TW_ACCESS_TOKEN_SECRET = os.environ.get('TW_ACCESS_TOKEN_SECRET', '')
 
 
 class NYTUtils:

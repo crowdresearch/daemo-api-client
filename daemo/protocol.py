@@ -1,7 +1,6 @@
 import logging
 
 from autobahn.twisted.websocket import WebSocketClientProtocol
-from twisted.internet.error import ConnectionDone
 
 from daemo.errors import Error
 

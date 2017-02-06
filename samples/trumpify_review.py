@@ -110,9 +110,9 @@ def create_review_task(worker_responses):
     :param worker_responses: submission made by a worker for a task
     """
     tasks = [{
-                 "tweet": get_tweet(worker_response),
-                 "tweet_result": get_tweet_response(worker_response)
-             } for worker_response in worker_responses]
+        "tweet": get_tweet(worker_response),
+        "tweet_result": get_tweet_response(worker_response)
+    } for worker_response in worker_responses]
 
     daemo.publish(
         project_key=REVIEW_PROJECT_KEY,
