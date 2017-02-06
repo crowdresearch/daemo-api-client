@@ -107,11 +107,10 @@ def completed(worker_responses):
     trained_workers = [response for response in worker_responses if str(get_task_id(response)) in gold_data]
 
     ratings = [{
-                   "task_id": worker_response.get("task_id"),
-                   "worker_id": worker_response.get("worker_id"),
-                   "weight": 1 if gold_data[str(get_task_id(worker_response))] == get_article_stance(
-                       worker_response) else 0
-               } for worker_response in trained_workers]
+        "task_id": worker_response.get("task_id"),
+        "worker_id": worker_response.get("worker_id"),
+        "weight": 1 if gold_data[str(get_task_id(worker_response))] == get_article_stance(worker_response) else 0
+    } for worker_response in trained_workers]
 
     client.rate(project_key=PROJECT_KEY, ratings=ratings)
 

@@ -8,12 +8,12 @@ from inspect import isfunction
 import yaml
 
 from daemo.api import ApiClient
+from daemo.channel import Channel
 from daemo.constants import *
 from daemo.errors import Error
 from daemo.storage import Store
 from daemo.utils import callback_thread, check_dependency, get_template_item_id, transform_task, transform_task_results, \
     remove_duplicates
-from daemo.channel import Channel
 
 log = logging.getLogger(__name__)
 
@@ -445,9 +445,11 @@ class DaemoClient:
 
             responses = mock_workers(task, num_workers)
 
-            check_dependency(responses is not None and len(
-                responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
-                                 len(responses), num_workers))
+            check_dependency(
+                responses is not None and
+                len(responses) == num_workers, "Incorrect number of responses. Result=%d. Expected=%d" % (
+                    len(responses), num_workers)
+            )
 
             results = [
                 {
@@ -542,8 +544,10 @@ class DaemoClient:
                 task_data = transform_task_results(taskworker)
 
             for batch_index in batch_indices:
-                check_dependency(batch_index < len(self.store.batches) \
-                                 and self.store.batches[batch_index] is not None, "Missing batch for task")
+                check_dependency(
+                    batch_index < len(self.store.batches)
+                    and self.store.batches[batch_index] is not None, "Missing batch for task"
+                )
 
                 check_dependency(task_data is not None, "No worker responses for task %d found" % task_id)
 

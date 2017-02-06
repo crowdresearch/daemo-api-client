@@ -109,5 +109,5 @@ class Auth:
             pass
 
         return response is not None \
-               and isinstance(response, dict) \
-               and response.get("detail", "") == CREDENTIALS_NOT_PROVIDED
+            and isinstance(response, dict) \
+            and response.get("detail", "") == CREDENTIALS_NOT_PROVIDED
