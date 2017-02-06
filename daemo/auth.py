@@ -17,6 +17,7 @@ ACCESS_TOKEN = "access_token"
 CLIENT_ID = "client_id"
 CREDENTIALS_NOT_PROVIDED = "Authentication credentials were not provided."
 REFRESH_TOKEN_FAILED = "Error refreshing access token. Please retry again."
+
 AUTH_TOKEN_URL = "/api/oauth2-ng/token/"
 
 

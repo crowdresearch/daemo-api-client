@@ -13,7 +13,7 @@ from daemo.errors import Error
 from daemo.storage import Store
 from daemo.utils import callback_thread, check_dependency, get_template_item_id, transform_task, transform_task_results, \
     remove_duplicates
-from daemo.websockets import Channel
+from daemo.channel import Channel
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class DaemoClient:
     ::
         RERUN_KEY = '0001'
 
-        daemo = DaemoClient(rerun_key=RERUN_KEY)
+        client = DaemoClient(rerun_key=RERUN_KEY)
 
     :param credentials_path: path of the daemo credentials file which can be downloaded from daemo user profile (**Menu** >> **Get Credentials**)
 
@@ -85,7 +85,7 @@ class DaemoClient:
 
         A typical usage is given below and each of the callbacks are explained further:
         ::
-            daemo.publish(
+            client.publish(
                 project_key='k0BXZxVz4P3w',
                 tasks=[{
                     "id": id,
@@ -183,6 +183,12 @@ class DaemoClient:
         If true, a worker's score will be set to the score that is provided to rate.
         If peer review is being used, this value should be set to True.
 
+        ::
+            client.rate(
+                project_key='k0BXZxVz4P3w',
+                ratings=ratings
+            )
+
         :return: rating response
 
         """
@@ -208,6 +214,16 @@ class DaemoClient:
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
         :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not. If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity. If False, it only allows peer feedback among workers for the same task they completed
+
+        ::
+            def review_completed(worker_responses):
+                client.rate(PROJECT_KEY, worker_responses)
+
+            client.peer_review(
+                project_key=PROJECT_KEY,
+                worker_responses=worker_responses,
+                review_completed=review_completed
+            )
 
         :return: review response
 
@@ -312,6 +328,9 @@ class DaemoClient:
 
         self._create_batch(project_key, tasks, approve, completed, stream, count)
 
+        log.info(msg="tasks synced")
+        log.info(msg="monitoring worker responses...")
+
         return tasks
 
     def _create_batch(self, project_key, tasks, approve, completed, stream, count):
@@ -323,6 +342,7 @@ class DaemoClient:
             "stream": stream,
             "count": count,
             "status": {},
+            "expected": {},
             "submissions": {},
             "is_complete": False,
             "aggregated_data": []
@@ -332,13 +352,16 @@ class DaemoClient:
 
         for task in tasks:
             check_dependency("id" in task and task["id"] is not None, "Invalid task")
-            self.store.map_task(task, batch_index)
+            self.store.map_task(task, batch_index, count)
 
             task_id = task["id"]
 
             if "task_workers" in task and len(task["task_workers"]) > 0:
+                expected = int(task.get('expected', 0))
+                task_group_id = int(task.get('task_group_id', 0))
+
                 for taskworker in task["task_workers"]:
-                    self._replay_task(project_key, task_id, taskworker)
+                    self._replay_task(project_key, task_id, task_group_id, expected, taskworker)
 
     def _peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
         task_workers = [response['id'] for response in worker_responses]
@@ -354,7 +377,8 @@ class DaemoClient:
         unique_workers = any([tasks[task_id] > 1 for task_id in tasks.keys()])
 
         check_dependency(len(task_workers) > 1, "Peer review requires more than 1 worker responses")
-        check_dependency(unique_workers, "Peer review requires more than 1 worker to complete the tasks. All tasks were completed by same worker.")
+        check_dependency(unique_workers, "Peer review requires more than 1 worker to complete the tasks. All tasks "
+                                         "were completed by single worker.")
 
         response = self.api_client.launch_peer_review(task_workers, inter_task_review, self.rerun_key)
 
@@ -371,7 +395,7 @@ class DaemoClient:
             if "scores" in response and len(response["scores"]) > 0:
                 self._replay_review(project_key, match_group_id, response["scores"])
 
-    def _replay_task(self, project_key, task_id, task_worker):
+    def _replay_task(self, project_key, task_id, task_group_id, expected, task_worker):
         # re-queue submitted results
         log.info(msg="syncing previous submissions...")
 
@@ -379,11 +403,13 @@ class DaemoClient:
             "type": "REGULAR",
             "payload": {
                 "taskworker_id": task_worker["id"],
-                "task_id": task_id,
+                "task_id": task_worker["task"],
+                "task_group_id": task_group_id,
                 "worker_id": task_worker["worker"],
                 "project_key": project_key,
                 "project_id": task_worker["project_data"]["id"],
-                "taskworker": task_worker
+                "taskworker": task_worker,
+                "expected": expected
             }
         })
 
@@ -479,19 +505,35 @@ class DaemoClient:
             if type == "REGULAR":
                 return self._process_task(payload)
 
+            if type == "ERROR":
+                return self._process_error(payload)
+
+    def _process_error(self, payload):
+        detail = int(payload.get("detail", "unknown error"))
+        # code = int(payload.get("code", 0))
+
+        log.error(detail)
+        self._stop()
+
     def _process_task(self, payload):
         taskworker_id = int(payload.get("taskworker_id", 0))
         task_id = int(payload.get("task_id", 0))
         worker_id = int(payload.get("worker_id", 0))
         project_key = payload.get("project_key", None)
         taskworker = payload.get("taskworker", None)
+        task_group_id = int(payload.get("task_group_id", 0))
+        expected = int(payload.get("expected", 0))
 
-        if task_id in self.store.tasks:
+        if task_group_id == 0 and taskworker is not None:
+            task_group_id = int(taskworker.get("task_group_id", 0))
+
+        if task_group_id in self.store.tasks:
             check_dependency(taskworker_id > 0, Error.required("taskworker_id"))
             check_dependency(task_id > 0, Error.required("task_id"))
+            check_dependency(task_group_id > 0, Error.required("task_group_id"))
             check_dependency(project_key is not None, Error.required("project_key"))
 
-            batch_indices = self.store.tasks[task_id]["batches"]
+            batch_indices = self.store.tasks[task_group_id]["batches"]
 
             if taskworker is None:
                 task_data = self.api_client.get_task_results_by_taskworker_id(taskworker_id)
@@ -512,13 +554,17 @@ class DaemoClient:
                 completed = config["completed"]
                 stream = config["stream"]
 
+                # update expected tasks
+                if expected > 0:
+                    self.store.batches[batch_index]["expected"][task_group_id] = expected
+
                 # increment count to track completion
-                self.store.batches[batch_index]["submissions"][task_id] += 1
+                self.store.batches[batch_index]["submissions"][task_group_id] += 1
 
                 if stream:
-                    self._stream_response(batch_index, task_id, task_data, approve, completed)
+                    self._stream_response(batch_index, task_id, task_group_id, task_data, approve, completed)
                 else:
-                    self._aggregate_responses(batch_index, task_id, task_data, approve, completed)
+                    self._aggregate_responses(batch_index, task_id, task_group_id, task_data, approve, completed)
 
                 self.check_for_pending_tasks_reviews()
         else:
@@ -548,7 +594,7 @@ class DaemoClient:
     def _review_completed(self, project_key, ratings, ignore_history=True):
         self.rate(project_key, ratings, ignore_history=ignore_history)
 
-    def _stream_response(self, batch_index, task_id, task_data, approve, completed):
+    def _stream_response(self, batch_index, task_id, task_group_id, task_data, approve, completed):
         log.info(msg="streaming responses...")
 
         log.info(msg="calling approve callback...")
@@ -557,7 +603,11 @@ class DaemoClient:
             task_data["accept"] = True
             log.info(msg="task %d approved" % task_id)
         else:
+            task_data["accept"] = False
             log.info(msg="task %d rejected" % task_id)
+
+            # reverse increment as rejection will create another task
+            self.store.batches[batch_index]["submissions"][task_group_id] -= 1
 
         self.api_client.update_approval_status(task_data)
 
@@ -565,21 +615,21 @@ class DaemoClient:
             log.info(msg="calling completed callback")
             completed([task_data])
 
-        is_done = self.store.is_task_complete(batch_index, task_id)
+        is_done = self.store.is_task_complete(batch_index, task_id, task_group_id)
 
         if is_done:
-            self.store.mark_task_completed(batch_index, task_id)
+            self.store.mark_task_completed(batch_index, task_id, task_group_id)
 
-    def _aggregate_responses(self, batch_index, task_id, task_data, approve, completed):
+    def _aggregate_responses(self, batch_index, task_id, task_group_id, task_data, approve, completed):
         log.info(msg="aggregating responses...")
 
         # store it for aggregation (stream = False)
-        self.store.aggregate(batch_index, task_id, task_data)
+        self.store.aggregate(batch_index, task_id, task_group_id, task_data)
 
-        is_done = self.store.is_task_complete(batch_index, task_id)
+        is_done = self.store.is_task_complete(batch_index, task_id, task_group_id)
 
         if is_done:
-            self.store.mark_task_completed(batch_index, task_id)
+            self.store.mark_task_completed(batch_index, task_id, task_group_id)
 
             is_done = self.store.is_batch_complete(batch_index)
 
@@ -600,16 +650,22 @@ class DaemoClient:
                     task_data["accept"] = approval
 
                     if approval:
-                        log.info(msg="task %d approved" % task_data.get("id"))
+                        log.info(msg="task %d approved" % task_data.get("task_id"))
                     else:
-                        log.info(msg="task %d rejected" % task_data.get("id"))
+                        log.info(msg="task %d rejected" % task_data.get("task_id"))
+                        self.store.batches[batch_index]["submissions"][task_group_id] -= 1
+                        self.store.mark_task_incomplete(batch_index, task_group_id)
+                        self.store.mark_batch_incomplete(batch_index)
 
                     self.api_client.update_approval_status(task_data)
 
-                approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+                is_done = self.store.is_batch_complete(batch_index)
 
-                log.info(msg="calling completed callback...")
-                completed(approved_tasks)
+                if is_done:
+                    approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+
+                    log.info(msg="calling completed callback...")
+                    completed(approved_tasks)
 
     def _fetch_task(self, task_id):
         data = self.api_client.fetch_task(task_id)
@@ -629,13 +685,14 @@ class DaemoClient:
 
         signal.signal(signal.SIGINT, self._handler)
 
-        access_token = self.api_client.get_auth_token()
         subscribe_url = self.websock_proto + self.host + self.api_client.route.subscribe
 
-        self.channel = Channel(self.queue, access_token, subscribe_url)
+        print "starting channel..."
+        self.channel = Channel(self.queue, self.api_client, subscribe_url)
         self.channel.start()
 
     def _handler(self, signum, frame):
+        # call this handler to stop the processes definitively
         if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT] and os.getpid() == self.channel.pid:
             self.channel.stop()
 

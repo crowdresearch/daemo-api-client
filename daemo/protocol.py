@@ -1,6 +1,7 @@
 import logging
 
 from autobahn.twisted.websocket import WebSocketClientProtocol
+from twisted.internet.error import ConnectionDone
 
 from daemo.errors import Error
 
@@ -8,6 +9,8 @@ log = logging.getLogger("daemo.client")
 
 
 class ClientProtocol(WebSocketClientProtocol):
+    lost = False
+
     def onConnect(self, response):
         log.info("channel connected")
         self.factory.resetDelay()
@@ -32,4 +35,16 @@ class ClientProtocol(WebSocketClientProtocol):
         log.debug("channel closed")
 
         if not wasClean:
-            log.error(reason)
+            log.error(reason.value)
+
+    def connectionLost(self, reason):
+        log.debug("connection lost")
+        # log.error(reason.value)
+
+        self.factory.onConnectionLost.callback(self)
+
+        # if isinstance(reason.value, ConnectionDone):
+        #     try:
+        #         self.factory.onConnectionLost.callback(self)
+        #     except Exception as e:
+        #         log.error(e)
