@@ -118,6 +118,11 @@ def transform_task_results(data):
 
     data["task_id"] = data["task"]
     data["worker_id"] = data["worker"]
+    data["taskworker_id"] = data["id"]
+
+    del data['task']
+    del data['worker']
+    del data['id']
 
     return data
 

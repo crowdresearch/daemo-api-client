@@ -10,9 +10,12 @@ log = logging.getLogger("daemo.client")
 class ClientProtocol(WebSocketClientProtocol):
     lost = False
 
-    def onConnect(self, response):
+    def connectionMade(self):
         log.info("channel connected")
         self.factory.resetDelay()
+
+    # def onConnect(self, response):
+    #     log.info("channel connected")
 
     def onOpen(self):
         log.info("channel opened")
@@ -31,19 +34,16 @@ class ClientProtocol(WebSocketClientProtocol):
         log.debug("<<<{}>>>".format(data))
 
     def onClose(self, wasClean, code, reason):
-        log.debug("channel closed")
+        log.warning("channel closed")
 
         if not wasClean:
             log.error(reason.value)
 
     def connectionLost(self, reason):
-        log.debug("connection lost")
-        # log.error(reason.value)
+        if self.factory.force_close:
+            onConnectionLost = self.factory.onConnectionLost
 
-        self.factory.onConnectionLost.callback(self)
-
-        # if isinstance(reason.value, ConnectionDone):
-        #     try:
-        #         self.factory.onConnectionLost.callback(self)
-        #     except Exception as e:
-        #         log.error(e)
+            # do not let callback fire again
+            if onConnectionLost is not None:
+                self.factory.onConnectionLost = None
+                onConnectionLost.callback(self)

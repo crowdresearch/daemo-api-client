@@ -73,6 +73,8 @@ class DaemoClient:
         if host is not None:
             self.host = host
 
+        self.pid = os.getpid()
+
         self.api_client = ApiClient(self.credentials_path, self.host, self.http_proto)
 
         self.store = Store()
@@ -566,9 +568,11 @@ class DaemoClient:
                 self.store.batches[batch_index]["submissions"][task_group_id] += 1
 
                 if stream:
-                    self._stream_response(batch_index, task_id, task_group_id, task_data, approve, completed)
+                    self._stream_response(batch_index, task_id, task_group_id, taskworker_id, task_data, approve,
+                                          completed)
                 else:
-                    self._aggregate_responses(batch_index, task_id, task_group_id, task_data, approve, completed)
+                    self._aggregate_responses(batch_index, task_id, task_group_id, taskworker_id, task_data, approve,
+                                              completed)
 
                 self.check_for_pending_tasks_reviews()
         else:
@@ -598,17 +602,17 @@ class DaemoClient:
     def _review_completed(self, project_key, ratings, ignore_history=True):
         self.rate(project_key, ratings, ignore_history=ignore_history)
 
-    def _stream_response(self, batch_index, task_id, task_group_id, task_data, approve, completed):
+    def _stream_response(self, batch_index, task_id, task_group_id, taskworker_id, task_data, approve, completed):
         log.info(msg="streaming responses...")
 
         log.info(msg="calling approve callback...")
 
         if approve([task_data]):
             task_data["accept"] = True
-            log.info(msg="task %d approved" % task_id)
+            log.info(msg="task worker %d approved" % taskworker_id)
         else:
             task_data["accept"] = False
-            log.info(msg="task %d rejected" % task_id)
+            log.info(msg="task worker %d rejected" % taskworker_id)
 
             # reverse increment as rejection will create another task
             self.store.batches[batch_index]["submissions"][task_group_id] -= 1
@@ -624,11 +628,11 @@ class DaemoClient:
         if is_done:
             self.store.mark_task_completed(batch_index, task_id, task_group_id)
 
-    def _aggregate_responses(self, batch_index, task_id, task_group_id, task_data, approve, completed):
+    def _aggregate_responses(self, batch_index, task_id, task_group_id, taskworker_id, task_data, approve, completed):
         log.info(msg="aggregating responses...")
 
         # store it for aggregation (stream = False)
-        self.store.aggregate(batch_index, task_id, task_group_id, task_data)
+        self.store.aggregate(batch_index, task_id, task_group_id, taskworker_id, task_data)
 
         is_done = self.store.is_task_complete(batch_index, task_id, task_group_id)
 
@@ -638,44 +642,52 @@ class DaemoClient:
             is_done = self.store.is_batch_complete(batch_index)
 
             if is_done:
-                self.store.mark_batch_completed(batch_index)
+                self._on_batch_complete(batch_index, approve, completed)
 
-                tasks_data = self.store.get_aggregated(batch_index)
+    def _on_batch_complete(self, batch_index, approve, completed):
+        self.store.mark_batch_completed(batch_index)
 
-                log.info(msg="calling approve callback...")
-                approvals = approve(tasks_data)
+        tasks_data = self.store.get_aggregated(batch_index)
 
-                tasks_approvals = zip(tasks_data, approvals)
+        log.info(msg="calling approve callback...")
+        approvals = approve(tasks_data)
 
-                for task_approval in tasks_approvals:
-                    task_data = task_approval[0]
-                    approval = task_approval[1]
+        tasks_approvals = zip(tasks_data, approvals)
 
-                    task_data["accept"] = approval
+        for task_approval in tasks_approvals:
+            task_data = task_approval[0]
+            approval = task_approval[1]
 
-                    if approval:
-                        log.info(msg="task %d approved" % task_data.get("task_id"))
-                    else:
-                        log.info(msg="task %d rejected" % task_data.get("task_id"))
-                        self.store.batches[batch_index]["submissions"][task_group_id] -= 1
-                        self.store.mark_task_incomplete(batch_index, task_group_id)
-                        self.store.mark_batch_incomplete(batch_index)
+            task_data["accept"] = approval
 
-                    self.api_client.update_approval_status(task_data)
+            if approval:
+                log.info(msg="task worker %d approved" % task_data.get("taskworker_id"))
+            else:
+                log.info(msg="task worker %d rejected" % task_data.get("taskworker_id"))
+                self.store.mark_task_incomplete(
+                    batch_index,
+                    task_data.get("task_id"),
+                    task_data.get("task_group_id")
+                )
+                self.store.mark_batch_incomplete(batch_index)
 
-                is_done = self.store.is_batch_complete(batch_index)
+            self.api_client.update_approval_status(task_data)
 
-                if is_done:
-                    approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+        is_done = self.store.is_batch_complete(batch_index)
 
-                    log.info(msg="calling completed callback...")
-                    completed(approved_tasks)
+        if is_done:
+            approved_tasks = [x[0] for x in zip(tasks_data, approvals) if x[1]]
+
+            log.info(msg="calling completed callback...")
+            completed(approved_tasks)
 
     def _fetch_task(self, task_id):
         data = self.api_client.fetch_task(task_id)
         return transform_task(data)
 
     def _open_channel(self):
+        signal.signal(signal.SIGINT, self._handler)
+
         # shared queue between main process and channel for message passing
         self.queue = multiprocessing.Queue()
 
@@ -687,23 +699,29 @@ class DaemoClient:
         thread = callback_thread(name='signal monitor', target=signal.pause)
         thread.start()
 
-        signal.signal(signal.SIGINT, self._handler)
-
         subscribe_url = self.websock_proto + self.host + self.api_client.route.subscribe
 
-        print "starting channel..."
         self.channel = Channel(self.queue, self.api_client, subscribe_url)
         self.channel.start()
 
     def _handler(self, signum, frame):
-        # call this handler to stop the processes definitively
-        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT] and os.getpid() == self.channel.pid:
-            self.channel.stop()
+        forced_closure = signum in [signal.SIGINT, signal.SIGTERM]
 
-            if self.queue is not None:
-                self.queue.put(None)
-                self.queue = None
+        # call this handler to stop the processes definitively
+        if signum in [signal.SIGINT, signal.SIGTERM, signal.SIGABRT]:
+
+            if self.channel is not None and os.getpid() == self.channel.pid:
+                # log.warn(msg="closing channel thread")
+
+                self.channel.stop(forced_closure)
+
+                if self.queue is not None:
+                    self.queue.put(None)
+                    self.queue = None
+
+            # if self.pid is not None and os.getpid() == self.pid:
+            #     log.warning(msg="client:closing main thread")
 
     def _stop(self):
-        log.info(msg="disconnecting...")
+        log.warn(msg="disconnecting...")
         os.kill(int(self.channel.pid), signal.SIGINT)

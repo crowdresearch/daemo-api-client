@@ -8,19 +8,33 @@ log = logging.getLogger("daemo.client")
 
 class ClientFactory(WebSocketClientFactory, ReconnectingClientFactory):
     maxRetries = 5
+    maxDelay = 300  # 5 min
 
     def clientConnectionFailed(self, connector, reason):
         log.warning("websocket connection failed.")
-        log.warning(reason.value)
+        # log.warning(reason.value)
 
-        if self.continueTrying > 0:
-            log.info("connecting again %d..." % self.retries)
-            self.retry(connector)
+        self.retryConnection(connector, reason, True)
 
     def clientConnectionLost(self, connector, reason):
-        # super(ClientFactory, self).clientConnectionLost(connector, reason)
         log.warning("websocket connection lost.")
 
-        if self.continueTrying > 0:
-            log.info("connecting again %d..." % self.retries)
-            self.retry(connector)
+        self.retryConnection(connector, reason, False)
+
+    def retryConnection(self, connector, reason, fail=False):
+        if self.continueTrying and self.retries < self.maxRetries:
+            self.connector = connector
+            log.info("connecting again (%d/%d)..." % (self.retries + 1, self.maxRetries))
+            self.retry(self.connector)
+        else:
+            self.stop(connector, fail)
+
+    def stop(self, connector, fail):
+        connector.disconnect()
+
+        if self.queue is not None:
+            self.queue.put(None)
+            self.queue = None
+
+        if fail:
+            connector.reactor.stop()
