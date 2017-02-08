@@ -18,7 +18,7 @@ before_script:
     flake8 .
 
 # command to run tests
-script: pytest
+script: python -m pytest
 
 deploy:
   provider: pypi

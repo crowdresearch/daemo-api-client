@@ -48,14 +48,14 @@ class ApiClient:
             return None
 
     def update_approval_status(self, task):
-        log.debug(msg="updating status for task %d" % task["task_id"])
+        log.debug(msg="updating status for task worker %d" % task["taskworker_id"])
 
         STATUS_ACCEPTED = 3
         STATUS_REJECTED = 4
 
         data = {
             "status": STATUS_ACCEPTED if task["accept"] else STATUS_REJECTED,
-            "workers": [task["id"]]
+            "workers": [task["taskworker_id"]]
         }
 
         response = self.client.post(self.route.update_task_status, data=json.dumps(data))
