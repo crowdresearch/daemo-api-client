@@ -93,7 +93,7 @@ class Store:
         return all([self.cache[match_group_id]["is_complete"] for match_group_id in self.cache.keys()])
 
     def aggregate(self, batch_index, task_id, task_group_id, taskworker_id, task_data):
-        task_data["taskworker_id"]=taskworker_id
+        task_data["taskworker_id"] = taskworker_id
         self.batches[batch_index]["aggregated_data"].append({
             "task_id": task_id,
             "task_group_id": task_group_id,
