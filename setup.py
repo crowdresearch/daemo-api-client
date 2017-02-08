@@ -11,7 +11,7 @@ if sys.version_info < (2, 7):
 
 install_requires = [
     'requests==2.11.1',
-    'autobahn[twisted]==0.16.0',
+    'autobahn[twisted]==0.17.1',
     'pyOpenSSL==16.1.0',
     'service_identity==16.0.0',
     'pyyaml==3.12',
