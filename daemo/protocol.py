@@ -11,11 +11,13 @@ class ClientProtocol(WebSocketClientProtocol):
     lost = False
 
     def connectionMade(self):
-        log.info("channel connected")
-        self.factory.resetDelay()
+        log.info("channel connection initiated")
+        super(ClientProtocol, self).connectionMade()
 
-    # def onConnect(self, response):
-    #     log.info("channel connected")
+    def onConnect(self, response):
+        log.info("channel connected")
+        super(ClientProtocol, self).onConnect(response)
+        self.factory.resetDelay()
 
     def onOpen(self):
         log.info("channel opened")
