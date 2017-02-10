@@ -667,7 +667,8 @@ class DaemoClient:
                 self.store.mark_task_incomplete(
                     batch_index,
                     task_data.get("task_id"),
-                    task_data.get("task_group_id")
+                    task_data.get("task_group_id"),
+                    task_data.get("taskworker_id")
                 )
                 self.store.mark_batch_incomplete(batch_index)
 

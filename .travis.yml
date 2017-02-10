@@ -27,6 +27,5 @@ deploy:
     secure: E7fKfKDm9DbxoRWxNr6fDnjQpfQxNeTAAt1JFpjJQRdaYpN2a92JR8s8MAIWsekcSpAmNlFTWN/dnPXzy1yQEEOdAKscvkRqLkp9c15oDiHII+vSec56tgedHQt8H51EVEH73E056TrklLAU+O7Uxw4JD5+gxgxwQQSm+u+0ne7QgzTJk03YmnsSj7/89ab3JwCL1wQAdHYiU7B7BCcsQS/5yV1I2m60Q/hEJqE3Y79iVz9NSBu+BwXBOr07kTHQl2t/pXiB7rOhaWLW2+ypB0Gwtkqz2me1ymw84dKJgN1hqAhurkjdQ5Hj9NIFfvDdjpxKbMzZ1cQK1wItUGyiupYyu900BCPf1FGle6yNiIlCrtmjuEuZmF8EHVjgsp2mLidY6Wwl9f/LuR0GOgHkMx6G5a4D5xvuDWZaUGXeF0iaPMZ9XwPBzMeclFwMLmLybpFktJrJl/6DUlRZVP0Xgul5DK3IUfA3tKaZ1yOa7o4lUnZlJoluPNlNvby0JzJy5YW3d7+YGAtC1zplUuHN9qQwK3bKsk5YYSOOKq/UdMqDUAsOJH881KJSK7bz4zqCh/sPgFgf0gp8yh8VXP+Kby60OcZkeIAvahXbu2Yh2wBRV6F0wFRNfEE/UcjpPlhQ8N4UgtCttB/MA7+fYncpFNFHKaNHI63qpIQKu0TGZzI=
   on:
     branch: master
-    tags: true
-    distributions: "sdist bdist_wheel"
+    distributions: "bdist_wheel"
     repo: crowdresearch/daemo-api-client

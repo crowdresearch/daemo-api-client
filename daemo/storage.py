@@ -59,25 +59,33 @@ class Store:
             self.batches[batch_index]["status"][task_group_id] = True
             log.debug(msg="task %d is complete" % task_group_id)
 
-    def mark_task_incomplete(self, batch_index, task_id, task_group_id):
+    def mark_task_incomplete(self, batch_index, task_id, task_group_id, taskworker_id):
         if task_group_id in self.batches[batch_index]["status"]:
-            self.batches[batch_index]["submissions"][task_group_id] = self.batches[batch_index]["submissions"][
-                task_group_id] - 1
+            self.batches[batch_index]["submissions"][task_group_id] = self.batches[batch_index]["submissions"][task_group_id] - 1
             self.batches[batch_index]["status"][task_group_id] = False
             log.debug(msg="task %d is NOT complete" % task_group_id)
 
+            data = self.batches[batch_index]["aggregated_data"]
+
+            aggregate = []
+            for taskworker in data:
+                if taskworker["data"]["taskworker_id"] != taskworker_id:
+                    aggregate.append(taskworker)
+
+            self.batches[batch_index]["aggregated_data"] = aggregate
+
     def is_batch_complete(self, batch_index):
         is_complete = all(self.batches[batch_index]["status"].values())
-        log.debug(msg="batch %d is %s complete" % (batch_index, ''if is_complete else 'NOT'))
+        log.debug(msg="batch %d is %s complete" % (batch_index + 1, '' if is_complete else 'NOT'))
         return is_complete
 
     def mark_batch_completed(self, batch_index):
-        log.debug(msg="batch %d is complete" % batch_index)
+        # log.debug(msg="batch %d is complete" % batch_index)
 
         self.batches[batch_index]["is_complete"] = True
 
     def mark_batch_incomplete(self, batch_index):
-        log.debug(msg="batch %d is NOT complete" % batch_index)
+        # log.debug(msg="batch %d is NOT complete" % batch_index)
 
         self.batches[batch_index]["is_complete"] = False
 
@@ -94,6 +102,7 @@ class Store:
 
     def aggregate(self, batch_index, task_id, task_group_id, taskworker_id, task_data):
         task_data["taskworker_id"] = taskworker_id
+
         self.batches[batch_index]["aggregated_data"].append({
             "task_id": task_id,
             "task_group_id": task_group_id,
