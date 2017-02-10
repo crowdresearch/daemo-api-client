@@ -21,7 +21,7 @@ To start creating a new project, Click on ``Start a new project`` button which o
 
 .. image:: images/blank-project.png
 
-Now a new project will be created where title can be updated. We name it as ``Classify Images`` in this case
+Now a new project will be created where title can be updated. We name it as ``Classify Images`` in this case.
 A project key ``kQm0M6Aw4VPX`` is generated which identifies the project and will be later used in API client to monitor this project.
 
 Using different components
@@ -80,7 +80,7 @@ Project Launch and API Instructions
 -----------------------------------
 .. image:: images/aws-instructions.png
 
-Once it is submitted, a new form appears with instructions. Please follow the instructions to fill in the AWS keys from Mechanical Turk. All the project tasks created will be posted to Mechanical Turk, so platform will need access to the keys to interact on your behalf with MTurk.
+Once it is submitted, a new form appears with instructions. Please follow the instructions to fill in the AWS keys from Mechanical Turk. All the project tasks created will be posted to Mechanical Turk, so platform will need access to the keys to interact on your behalf with MTurk. It assumes that there are already funds in the account to post required number of tasks with additional MTurk fees. No task will be posted to MTurk if there are insufficient funds in the account.
 
 - From here, we can download the credentials ``credentials.json`` and the starter API script ``daemo.py`` to interact with the project we created.
 
