@@ -184,7 +184,6 @@ class DaemoClient:
         :param ignore_history: boolean value that determines whether historical ratings should be considered for updating this new rating.
         If true, a worker's score will be set to the score that is provided to rate.
         If peer review is being used, this value should be set to True.
-
         ::
             client.rate(
                 project_key='k0BXZxVz4P3w',
@@ -216,7 +215,6 @@ class DaemoClient:
         :param worker_responses: list of worker responses to the given task
         :param review_completed: a callback function to process all the ratings received from peer feedback on the worker responses
         :param inter_task_review: a boolean value to control if peer feedback should be allowed across workers on same task or not. If True, it will allow peer feedback for workers for any task they completed in the past irrespective of their similiarity. If False, it only allows peer feedback among workers for the same task they completed
-
         ::
             def review_completed(worker_responses):
                 client.rate(PROJECT_KEY, worker_responses)
