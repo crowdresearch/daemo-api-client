@@ -6,12 +6,12 @@ log = logging.getLogger("daemo.client")
 class Store:
     batches = None
     tasks = None
-    cache = None
+    reviews = None
 
     def __init__(self):
         self.batches = []
         self.tasks = {}
-        self.cache = {}
+        self.reviews = {}
 
     def batch_count(self):
         return len(self.batches)
@@ -38,13 +38,6 @@ class Store:
             }
 
     def is_task_complete(self, batch_index, task_id, task_group_id):
-        # task_status = self._fetch_task_status(task_id)
-        #
-        # is_done = task_status["is_done"]
-        # expected = int(task_status["expected"])
-
-        # expected = int(self.batches[batch_index]["count"])
-
         expected = self.batches[batch_index]["expected"][task_group_id]
         actual = self.batches[batch_index]["submissions"][task_group_id]
 
@@ -92,13 +85,13 @@ class Store:
     def mark_match_completed(self, match_index):
         log.debug(msg="match %d is complete" % match_index)
 
-        self.cache[match_index]["is_complete"] = True
+        self.reviews[match_index]["is_complete"] = True
 
     def all_batches_complete(self):
         return all([batch["is_complete"] for batch in self.batches])
 
     def all_reviews_complete(self):
-        return all([self.cache[match_group_id]["is_complete"] for match_group_id in self.cache.keys()])
+        return all([self.reviews[match_group_id]["is_complete"] for match_group_id in self.reviews.keys()])
 
     def aggregate(self, batch_index, task_id, task_group_id, taskworker_id, task_data):
         task_data["taskworker_id"] = taskworker_id

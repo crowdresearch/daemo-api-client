@@ -364,7 +364,7 @@ class DaemoClient:
                     self._replay_task(project_key, task_id, task_group_id, expected, taskworker)
 
     def _peer_review(self, project_key, worker_responses, review_completed, inter_task_review=False):
-        task_workers = [response['id'] for response in worker_responses]
+        task_workers = [response['taskworker_id'] for response in worker_responses]
 
         tasks = {}
         for response in worker_responses:
@@ -374,7 +374,7 @@ class DaemoClient:
             if not response["worker_id"] in tasks[response["task_id"]]:
                 tasks[response["task_id"]].append(response["worker_id"])
 
-        unique_workers = any([tasks[task_id] > 1 for task_id in tasks.keys()])
+        unique_workers = any([len(tasks[task_id]) > 1 for task_id in tasks.keys()])
 
         check_dependency(len(task_workers) > 1, "Peer review requires more than 1 worker responses")
         check_dependency(unique_workers, "Peer review requires more than 1 worker to complete the tasks. All tasks "
@@ -384,13 +384,13 @@ class DaemoClient:
 
         match_group_id = str(response['match_group_id'])
 
-        if match_group_id not in self.store.cache:
-            self.store.cache[match_group_id] = {}
+        if match_group_id not in self.store.reviews:
+            self.store.reviews[match_group_id] = {}
 
         if review_completed is not None:
-            self.store.cache[match_group_id]['project_key'] = project_key
-            self.store.cache[match_group_id]['review_completed'] = review_completed
-            self.store.cache[match_group_id]['is_complete'] = False
+            self.store.reviews[match_group_id]['project_key'] = project_key
+            self.store.reviews[match_group_id]['review_completed'] = review_completed
+            self.store.reviews[match_group_id]['is_complete'] = False
 
             if "scores" in response and len(response["scores"]) > 0:
                 self._replay_review(project_key, match_group_id, response["scores"])
@@ -511,7 +511,7 @@ class DaemoClient:
                 return self._process_error(payload)
 
     def _process_error(self, payload):
-        detail = int(payload.get("detail", "unknown error"))
+        detail = payload.get("detail", "unknown error")
         # code = int(payload.get("code", 0))
 
         log.error(detail)
@@ -584,11 +584,11 @@ class DaemoClient:
         else:
             ratings = self.api_client.get_trueskill_scores(match_group_id)
 
-        if match_group_id in self.store.cache:
-            project_key = self.store.cache[match_group_id]['project_key']
-            review_completed = self.store.cache[match_group_id]['review_completed']
+        if match_group_id in self.store.reviews:
+            project_key = self.store.reviews[match_group_id]['project_key']
+            review_completed = self.store.reviews[match_group_id]['review_completed']
             review_completed(project_key, ratings)
-            self.store.cache[match_group_id]['is_complete'] = True
+            self.store.reviews[match_group_id]['is_complete'] = True
 
             self.check_for_pending_tasks_reviews()
 
